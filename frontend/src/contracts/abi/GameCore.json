@@ -1,0 +1,186 @@
+[
+  {
+    "type": "function",
+    "name": "getGameConfig",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [
+      { "name": "houseEdgeBps", "type": "uint256" },
+      { "name": "minBet", "type": "uint256" },
+      { "name": "maxBet", "type": "uint256" },
+      { "name": "rewardPool", "type": "uint256" }
+    ]
+  },
+  {
+    "type": "function",
+    "name": "getPlayerStats",
+    "stateMutability": "view",
+    "inputs": [{ "name": "player", "type": "address" }],
+    "outputs": [
+      { "name": "totalBets", "type": "uint256" },
+      { "name": "wins", "type": "uint256" },
+      { "name": "totalPayout", "type": "uint256" },
+      { "name": "referrer", "type": "address" }
+    ]
+  },
+  {
+    "type": "function",
+    "name": "getSupportedTokens",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [{ "name": "tokens", "type": "address[]" }]
+  },
+  {
+    "type": "function",
+    "name": "getTokenInfo",
+    "stateMutability": "view",
+    "inputs": [{ "name": "token", "type": "address" }],
+    "outputs": [
+      { "name": "symbol", "type": "string" },
+      { "name": "decimals", "type": "uint8" },
+      { "name": "enabled", "type": "bool" }
+    ]
+  },
+  {
+    "type": "function",
+    "name": "betDice",
+    "stateMutability": "payable",
+    "inputs": [
+      { "name": "chosenNumber", "type": "uint8" },
+      { "name": "multiplier", "type": "uint8" },
+      { "name": "token", "type": "address" },
+      { "name": "amount", "type": "uint256" }
+    ],
+    "outputs": [{ "name": "requestId", "type": "uint256" }]
+  },
+  {
+    "type": "function",
+    "name": "getDiceResult",
+    "stateMutability": "view",
+    "inputs": [{ "name": "requestId", "type": "uint256" }],
+    "outputs": [
+      { "name": "result", "type": "uint8" },
+      { "name": "payout", "type": "uint256" },
+      { "name": "win", "type": "bool" }
+    ]
+  },
+  {
+    "type": "function",
+    "name": "betPoker",
+    "stateMutability": "payable",
+    "inputs": [
+      { "name": "handChoice", "type": "uint8" },
+      { "name": "token", "type": "address" },
+      { "name": "amount", "type": "uint256" }
+    ],
+    "outputs": [{ "name": "requestId", "type": "uint256" }]
+  },
+  {
+    "type": "function",
+    "name": "getPokerResult",
+    "stateMutability": "view",
+    "inputs": [{ "name": "requestId", "type": "uint256" }],
+    "outputs": [
+      { "name": "playerHand", "type": "uint8" },
+      { "name": "dealerHand", "type": "uint8" },
+      { "name": "payout", "type": "uint256" },
+      { "name": "win", "type": "bool" }
+    ]
+  },
+  {
+    "type": "function",
+    "name": "getAchievements",
+    "stateMutability": "view",
+    "inputs": [{ "name": "player", "type": "address" }],
+    "outputs": [{ "name": "achievementIds", "type": "uint256[]" }]
+  },
+  {
+    "type": "function",
+    "name": "claimAchievement",
+    "stateMutability": "nonpayable",
+    "inputs": [{ "name": "achievementId", "type": "uint256" }],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "setReferrer",
+    "stateMutability": "nonpayable",
+    "inputs": [{ "name": "referrer", "type": "address" }],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "claimReferralRewards",
+    "stateMutability": "nonpayable",
+    "inputs": [],
+    "outputs": []
+  },
+  {
+    "type": "event",
+    "name": "DiceBetPlaced",
+    "inputs": [
+      { "name": "requestId", "type": "uint256", "indexed": true },
+      { "name": "player", "type": "address", "indexed": true },
+      { "name": "amount", "type": "uint256", "indexed": false },
+      { "name": "token", "type": "address", "indexed": false },
+      { "name": "chosenNumber", "type": "uint8", "indexed": false },
+      { "name": "multiplier", "type": "uint8", "indexed": false }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "DiceBetSettled",
+    "inputs": [
+      { "name": "requestId", "type": "uint256", "indexed": true },
+      { "name": "result", "type": "uint8", "indexed": false },
+      { "name": "payout", "type": "uint256", "indexed": false },
+      { "name": "win", "type": "bool", "indexed": false }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "PokerBetPlaced",
+    "inputs": [
+      { "name": "requestId", "type": "uint256", "indexed": true },
+      { "name": "player", "type": "address", "indexed": true },
+      { "name": "amount", "type": "uint256", "indexed": false },
+      { "name": "token", "type": "address", "indexed": false },
+      { "name": "handChoice", "type": "uint8", "indexed": false }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "PokerBetSettled",
+    "inputs": [
+      { "name": "requestId", "type": "uint256", "indexed": true },
+      { "name": "playerHand", "type": "uint8", "indexed": false },
+      { "name": "dealerHand", "type": "uint8", "indexed": false },
+      { "name": "payout", "type": "uint256", "indexed": false },
+      { "name": "win", "type": "bool", "indexed": false }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "AchievementMinted",
+    "inputs": [
+      { "name": "player", "type": "address", "indexed": true },
+      { "name": "achievementId", "type": "uint256", "indexed": false },
+      { "name": "tokenId", "type": "uint256", "indexed": false }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "ReferralRewardPaid",
+    "inputs": [
+      { "name": "player", "type": "address", "indexed": true },
+      { "name": "amount", "type": "uint256", "indexed": false },
+      { "name": "token", "type": "address", "indexed": false }
+    ],
+    "anonymous": false
+  }
+]
