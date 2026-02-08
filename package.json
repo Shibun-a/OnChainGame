@@ -1,0 +1,15 @@
+{
+  "name": "onchain-game-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "On-Chain Verifiable Random Game Platform with Chainlink VRF v2",
+  "scripts": {
+    "dev": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "preview": "npm --prefix frontend run preview",
+    "test": "npm --prefix frontend run test",
+    "install:frontend": "npm --prefix frontend install"
+  },
+  "keywords": ["blockchain", "ethereum", "solidity", "chainlink-vrf", "web3", "gaming"],
+  "license": "MIT"
+}
