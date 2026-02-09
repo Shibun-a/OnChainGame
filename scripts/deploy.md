@@ -1,5 +1,36 @@
 # Deployment Guide
 
+## Contract Deployment (Foundry)
+
+### Step 1: Install & Setup
+```bash
+cd contracts
+forge install
+```
+
+### Step 2: Set Environment Variables
+Create a `.env` file in `contracts/`:
+```ini
+PRIVATE_KEY=your_private_key_here
+VRF_SUBSCRIPTION_ID=your_subscription_id
+ETHERSCAN_API_KEY=your_etherscan_key (optional for verification)
+```
+
+### Step 3: Deploy to Sepolia
+```bash
+forge script script/Deploy.s.sol:DeployScript \
+    --rpc-url https://rpc.sepolia.org \
+    --broadcast \
+    --verify \
+    --etherscan-api-key $ETHERSCAN_API_KEY \
+    -vvvv
+```
+
+### Step 4: Configure VRF
+Go to https://vrf.chain.link and add the deployed contract address as a Consumer to your subscription.
+
+---
+
 ## Contract Deployment (Remix IDE)
 
 ### Step 1: Prerequisites
