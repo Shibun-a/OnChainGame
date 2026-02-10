@@ -343,8 +343,8 @@ contract GameCore is VRFConsumerBaseV2Plus, ERC721, ReentrancyGuard {
             // Check if card already drawn
             if ((drawnMask & (1 << card)) == 0) {
                 drawnMask |= (1 << card);
-                // Convert 0-51 to 1-13 Rank
-                cards[count] = (card % 13) + 1;
+                // Store 1-52 (Card ID)
+                cards[count] = card + 1;
                 count++;
             }
             seed = uint256(keccak256(abi.encode(seed)));
@@ -386,31 +386,83 @@ contract GameCore is VRFConsumerBaseV2Plus, ERC721, ReentrancyGuard {
     }
 
     function _evaluateHand(uint8[3] memory cards) internal pure returns (uint8) {
-        uint8[3] memory s = _sort(cards);
-        if (s[0] == s[1] && s[1] == s[2]) return 2; // Three of a kind
-        if (s[0] == s[1] || s[1] == s[2]) return 1; // Pair
-        return 0; // High card
+        uint8[3] memory ranks;
+        uint8[3] memory suits;
+        
+        for (uint i = 0; i < 3; i++) {
+            ranks[i] = _getRank(cards[i]);
+            suits[i] = _getSuit(cards[i]);
+        }
+        
+        ranks = _sort(ranks);
+        
+        bool isFlush = (suits[0] == suits[1] && suits[1] == suits[2]);
+        bool isStraight = (ranks[0] + 1 == ranks[1] && ranks[1] + 1 == ranks[2]);
+        // A-2-3 Straight (A=14, 2=2, 3=3). Sorted: 2,3,14.
+        if (ranks[0] == 2 && ranks[1] == 3 && ranks[2] == 14) isStraight = true;
+        
+        if (isFlush && isStraight) return 5; // Straight Flush
+        if (ranks[0] == ranks[1] && ranks[1] == ranks[2]) return 4; // Three of a Kind
+        if (isStraight) return 3; // Straight
+        if (isFlush) return 2; // Flush
+        if (ranks[0] == ranks[1] || ranks[1] == ranks[2]) return 1; // Pair
+        return 0; // High Card
     }
 
     function _calculateScore(uint8[3] memory cards) internal pure returns (uint32) {
-        uint8[3] memory s = _sort(cards);
-        
-        // Three of a Kind: Base 300000 + Rank
-        if (s[0] == s[1] && s[1] == s[2]) {
-            return 300000 + uint32(s[0]);
+        uint8[3] memory ranks;
+        for (uint i = 0; i < 3; i++) {
+            ranks[i] = _getRank(cards[i]);
         }
+        ranks = _sort(ranks);
         
-        // Pair: Base 200000 + PairRank*100 + Kicker
-        if (s[0] == s[1]) { // Pair is s[0], Kicker is s[2]
-            return 200000 + uint32(s[0]) * 100 + uint32(s[2]);
-        }
-        if (s[1] == s[2]) { // Pair is s[1], Kicker is s[0]
-            return 200000 + uint32(s[1]) * 100 + uint32(s[0]);
-        }
+        uint8 handRank = _evaluateHand(cards);
         
-        // High Card: Base 100000 + High*10000 + Mid*100 + Low
-        // Note: s[2] is highest, s[0] is lowest based on _sort
-        return 100000 + uint32(s[2]) * 10000 + uint32(s[1]) * 100 + uint32(s[0]);
+        // Base scores:
+        // SF: 500,000
+        // 3K: 400,000
+        // ST: 300,000
+        // FL: 200,000
+        // PR: 100,000
+        // HC: 0
+        
+        if (handRank == 5) { // Straight Flush
+            // Tie break by high card. A-2-3 (14,2,3) is lowest straight (3 high). 
+            if (ranks[0] == 2 && ranks[1] == 3 && ranks[2] == 14) return 500000 + 3; 
+            return 500000 + uint32(ranks[2]);
+        }
+        if (handRank == 4) { // Three of a Kind
+            return 400000 + uint32(ranks[0]);
+        }
+        if (handRank == 3) { // Straight
+             if (ranks[0] == 2 && ranks[1] == 3 && ranks[2] == 14) return 300000 + 3;
+             return 300000 + uint32(ranks[2]);
+        }
+        if (handRank == 2) { // Flush
+            // Compare High, then Mid, then Low
+            return 200000 + uint32(ranks[2]) * 10000 + uint32(ranks[1]) * 100 + uint32(ranks[0]);
+        }
+        if (handRank == 1) { // Pair
+            if (ranks[0] == ranks[1]) { // Pair is ranks[0], Kicker ranks[2]
+                return 100000 + uint32(ranks[0]) * 100 + uint32(ranks[2]);
+            } else { // Pair is ranks[1], Kicker ranks[0]
+                return 100000 + uint32(ranks[1]) * 100 + uint32(ranks[0]);
+            }
+        }
+        // High Card
+        return uint32(ranks[2]) * 10000 + uint32(ranks[1]) * 100 + uint32(ranks[0]);
+    }
+
+    function _getRank(uint8 card) internal pure returns (uint8) {
+        // card is 1-52
+        // (card-1)%13 is 0-12 (A,2...K)
+        uint8 r = (card - 1) % 13;
+        if (r == 0) return 14; // Ace is 14
+        return r + 1; // 2..13
+    }
+
+    function _getSuit(uint8 card) internal pure returns (uint8) {
+        return (card - 1) / 13;
     }
 
     function _sort(uint8[3] memory arr) internal pure returns (uint8[3] memory) {
