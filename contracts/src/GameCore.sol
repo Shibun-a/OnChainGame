@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@chainlink/contracts/src/v0.8/VRFConsumerBaseV2.sol";
-import "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
+import "@chainlink/contracts/src/v0.8/vrf/dev/VRFConsumerBaseV2Plus.sol";
+import "@chainlink/contracts/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-contract GameCore is VRFConsumerBaseV2, ERC721, Ownable, ReentrancyGuard {
+contract GameCore is VRFConsumerBaseV2Plus, ERC721, ReentrancyGuard {
 
     // ============ State Variables ============
 
@@ -19,10 +18,9 @@ contract GameCore is VRFConsumerBaseV2, ERC721, Ownable, ReentrancyGuard {
     uint256 public rewardPool;
 
     // VRF config
-    VRFCoordinatorV2Interface private vrfCoordinator;
-    uint64 public subscriptionId;
+    uint256 public subscriptionId;
     bytes32 public keyHash;
-    uint32 public callbackGasLimit = 200000;
+    uint32 public callbackGasLimit = 500000;
     uint16 public requestConfirmations = 3;
 
     // Token whitelist
@@ -84,10 +82,9 @@ contract GameCore is VRFConsumerBaseV2, ERC721, Ownable, ReentrancyGuard {
 
     constructor(
         address _vrfCoordinator,
-        uint64 _subscriptionId,
+        uint256 _subscriptionId,
         bytes32 _keyHash
-    ) VRFConsumerBaseV2(_vrfCoordinator) ERC721("GameAchievements", "GACH") {
-        vrfCoordinator = VRFCoordinatorV2Interface(_vrfCoordinator);
+    ) VRFConsumerBaseV2Plus(_vrfCoordinator) ERC721("GameAchievements", "GACH") {
         subscriptionId = _subscriptionId;
         keyHash = _keyHash;
 
@@ -96,7 +93,11 @@ contract GameCore is VRFConsumerBaseV2, ERC721, Ownable, ReentrancyGuard {
         isTokenSupported[address(0)] = true;
     }
 
-    // ============ Admin Functions ============
+    // Allow receiving ETH to fund the reward pool
+    receive() external payable {
+        rewardPool += msg.value;
+    }
+        // ============ Admin Functions ============
 
     function addSupportedToken(address token) external onlyOwner {
         require(!isTokenSupported[token], "Already supported");
@@ -147,6 +148,10 @@ contract GameCore is VRFConsumerBaseV2, ERC721, Ownable, ReentrancyGuard {
         return (bet.playerHandRank, bet.dealerHandRank, bet.payout, bet.payout > 0);
     }
 
+    function getFullPokerBet(uint256 requestId) external view returns (PokerBet memory) {
+        return pokerBets[requestId];
+    }
+
     function getAchievements(address player) external view returns (uint256[] memory) {
         uint256 count = 0;
         if (hasDiceAchievement[player]) count++;
@@ -183,8 +188,17 @@ contract GameCore is VRFConsumerBaseV2, ERC721, Ownable, ReentrancyGuard {
         require(rewardPool >= maxPayout, "Reward pool insufficient");
 
         // Request VRF
-        requestId = vrfCoordinator.requestRandomWords(
-            keyHash, subscriptionId, requestConfirmations, callbackGasLimit, 1
+        requestId = s_vrfCoordinator.requestRandomWords(
+            VRFV2PlusClient.RandomWordsRequest({
+                keyHash: keyHash,
+                subId: subscriptionId,
+                requestConfirmations: requestConfirmations,
+                callbackGasLimit: callbackGasLimit,
+                numWords: 1,
+                extraArgs: VRFV2PlusClient._argsToBytes(
+                    VRFV2PlusClient.ExtraArgsV1({nativePayment: true})
+                )
+            })
         );
 
         // Store bet
@@ -236,8 +250,17 @@ contract GameCore is VRFConsumerBaseV2, ERC721, Ownable, ReentrancyGuard {
         uint256 maxPayout = (amount * 2 * (10000 - houseEdgeBps)) / 10000;
         require(rewardPool >= maxPayout, "Reward pool insufficient");
 
-        requestId = vrfCoordinator.requestRandomWords(
-            keyHash, subscriptionId, requestConfirmations, callbackGasLimit, 1
+        requestId = s_vrfCoordinator.requestRandomWords(
+            VRFV2PlusClient.RandomWordsRequest({
+                keyHash: keyHash,
+                subId: subscriptionId,
+                requestConfirmations: requestConfirmations,
+                callbackGasLimit: callbackGasLimit,
+                numWords: 1,
+                extraArgs: VRFV2PlusClient._argsToBytes(
+                    VRFV2PlusClient.ExtraArgsV1({nativePayment: true})
+                )
+            })
         );
 
         pokerBets[requestId] = PokerBet({
@@ -269,7 +292,7 @@ contract GameCore is VRFConsumerBaseV2, ERC721, Ownable, ReentrancyGuard {
 
     // ============ VRF Callback ============
 
-    function fulfillRandomWords(uint256 requestId, uint256[] memory randomWords) internal override {
+    function fulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) internal override {
         if (isDiceRequest[requestId]) {
             _settleDice(requestId, randomWords[0]);
         } else {
@@ -309,11 +332,21 @@ contract GameCore is VRFConsumerBaseV2, ERC721, Ownable, ReentrancyGuard {
         PokerBet storage bet = pokerBets[requestId];
         require(!bet.settled, "Already settled");
 
-        // Generate 6 cards from random word
+        // Generate 6 unique cards from 52 card deck
         uint256 seed = randomWord;
         uint8[6] memory cards;
-        for (uint8 i = 0; i < 6; i++) {
-            cards[i] = uint8((seed % 13) + 1);
+        uint8 count = 0;
+        uint256 drawnMask = 0;
+
+        while (count < 6) {
+            uint8 card = uint8(seed % 52);
+            // Check if card already drawn
+            if ((drawnMask & (1 << card)) == 0) {
+                drawnMask |= (1 << card);
+                // Convert 0-51 to 1-13 Rank
+                cards[count] = (card % 13) + 1;
+                count++;
+            }
             seed = uint256(keccak256(abi.encode(seed)));
         }
 
@@ -323,8 +356,12 @@ contract GameCore is VRFConsumerBaseV2, ERC721, Ownable, ReentrancyGuard {
         bet.playerHandRank = _evaluateHand(bet.playerCards);
         bet.dealerHandRank = _evaluateHand(bet.dealerCards);
 
-        bool win = bet.playerHandRank > bet.dealerHandRank;
-        bool tie = bet.playerHandRank == bet.dealerHandRank;
+        // Calculate detailed scores for tie-breaking
+        uint32 playerScore = _calculateScore(bet.playerCards);
+        uint32 dealerScore = _calculateScore(bet.dealerCards);
+
+        bool win = playerScore > dealerScore;
+        bool tie = playerScore == dealerScore;
 
         if (win) {
             uint256 payout = (bet.amount * 2 * (10000 - houseEdgeBps)) / 10000;
@@ -348,14 +385,35 @@ contract GameCore is VRFConsumerBaseV2, ERC721, Ownable, ReentrancyGuard {
         emit PokerBetSettled(requestId, bet.playerHandRank, bet.dealerHandRank, bet.payout, win);
     }
 
-    function _evaluateHand(uint8[3] memory cards) private pure returns (uint8) {
+    function _evaluateHand(uint8[3] memory cards) internal pure returns (uint8) {
         uint8[3] memory s = _sort(cards);
         if (s[0] == s[1] && s[1] == s[2]) return 2; // Three of a kind
         if (s[0] == s[1] || s[1] == s[2]) return 1; // Pair
         return 0; // High card
     }
 
-    function _sort(uint8[3] memory arr) private pure returns (uint8[3] memory) {
+    function _calculateScore(uint8[3] memory cards) internal pure returns (uint32) {
+        uint8[3] memory s = _sort(cards);
+        
+        // Three of a Kind: Base 300000 + Rank
+        if (s[0] == s[1] && s[1] == s[2]) {
+            return 300000 + uint32(s[0]);
+        }
+        
+        // Pair: Base 200000 + PairRank*100 + Kicker
+        if (s[0] == s[1]) { // Pair is s[0], Kicker is s[2]
+            return 200000 + uint32(s[0]) * 100 + uint32(s[2]);
+        }
+        if (s[1] == s[2]) { // Pair is s[1], Kicker is s[0]
+            return 200000 + uint32(s[1]) * 100 + uint32(s[0]);
+        }
+        
+        // High Card: Base 100000 + High*10000 + Mid*100 + Low
+        // Note: s[2] is highest, s[0] is lowest based on _sort
+        return 100000 + uint32(s[2]) * 10000 + uint32(s[1]) * 100 + uint32(s[0]);
+    }
+
+    function _sort(uint8[3] memory arr) internal pure returns (uint8[3] memory) {
         if (arr[0] > arr[1]) (arr[0], arr[1]) = (arr[1], arr[0]);
         if (arr[1] > arr[2]) (arr[1], arr[2]) = (arr[2], arr[1]);
         if (arr[0] > arr[1]) (arr[0], arr[1]) = (arr[1], arr[0]);
@@ -394,8 +452,5 @@ contract GameCore is VRFConsumerBaseV2, ERC721, Ownable, ReentrancyGuard {
         }
     }
 
-    // Allow contract to receive ETH
-    receive() external payable {
-        rewardPool += msg.value;
-    }
+
 }
