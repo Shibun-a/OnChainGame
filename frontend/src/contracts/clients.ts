@@ -4,7 +4,7 @@ import { sepolia, mainnet } from 'viem/chains'
 // Sepolia public client for reading contract data
 export const publicClient = createPublicClient({
   chain: sepolia,
-  transport: http(),
+  transport: http(import.meta.env.VITE_RPC_URL || undefined),
 })
 
 // Mainnet public client for ENS resolution
