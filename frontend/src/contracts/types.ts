@@ -138,13 +138,19 @@ export const DICE_MULTIPLIERS = [
 export enum PokerHandRank {
   HighCard = 0,
   Pair = 1,
-  ThreeOfAKind = 2,
+  Flush = 2,
+  Straight = 3,
+  ThreeOfAKind = 4,
+  StraightFlush = 5,
 }
 
 export const POKER_HAND_NAMES: Record<PokerHandRank, string> = {
   [PokerHandRank.HighCard]: 'High Card',
   [PokerHandRank.Pair]: 'Pair',
+  [PokerHandRank.Flush]: 'Flush',
+  [PokerHandRank.Straight]: 'Straight',
   [PokerHandRank.ThreeOfAKind]: 'Three of a Kind',
+  [PokerHandRank.StraightFlush]: 'Straight Flush',
 }
 
 // Card display helpers

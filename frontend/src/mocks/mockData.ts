@@ -98,13 +98,34 @@ export function generateRandomDiceResult(): number {
 }
 
 export function generateRandomCard(): number {
-  return Math.floor(Math.random() * 13) + 1
+  return Math.floor(Math.random() * 52) + 1
 }
 
 export function evaluatePokerHand(cards: number[]): number {
-  const values = cards.map(c => ((c - 1) % 13) + 1)
-  const sorted = [...values].sort((a, b) => a - b)
-  if (sorted[0] === sorted[1] && sorted[1] === sorted[2]) return 2
-  if (sorted[0] === sorted[1] || sorted[1] === sorted[2]) return 1
-  return 0
+  const ranks = cards.map(c => ((c - 1) % 13) + 1).sort((a, b) => a - b)
+  const suits = cards.map(c => Math.floor((c - 1) / 13))
+  
+  const isFlush = suits[0] === suits[1] && suits[1] === suits[2]
+  let isStraight = ranks[0] + 1 === ranks[1] && ranks[1] + 1 === ranks[2]
+  // A-2-3 Straight (A=1, 2=2, 3=3 if Ace is 1? Wait, A is usually 14 or 1)
+  // In our logic A is 1 (index 0) but rank calculation above makes it 1.
+  // Let's align with contract: A is 14.
+  // But (c-1)%13 + 1 gives 1 for Ace.
+  // If we want A=14, we need to adjust.
+  
+  // Re-map ranks to match contract (A=14)
+  const contractRanks = cards.map(c => {
+    const r = ((c - 1) % 13) + 1
+    return r === 1 ? 14 : r
+  }).sort((a, b) => a - b)
+  
+  isStraight = contractRanks[0] + 1 === contractRanks[1] && contractRanks[1] + 1 === contractRanks[2]
+  if (contractRanks[0] === 2 && contractRanks[1] === 3 && contractRanks[2] === 14) isStraight = true
+
+  if (isFlush && isStraight) return 5 // Straight Flush
+  if (contractRanks[0] === contractRanks[1] && contractRanks[1] === contractRanks[2]) return 4 // Three of a Kind
+  if (isStraight) return 3 // Straight
+  if (isFlush) return 2 // Flush
+  if (contractRanks[0] === contractRanks[1] || contractRanks[1] === contractRanks[2]) return 1 // Pair
+  return 0 // High Card
 }

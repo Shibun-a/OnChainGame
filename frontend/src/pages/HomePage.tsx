@@ -71,7 +71,7 @@ export default function HomePage() {
             <div className="text-5xl mb-4">♠️</div>
             <h2 className="text-2xl font-bold mb-2 group-hover:text-purple-400 transition-colors">Poker Game</h2>
             <p className="text-gray-400 mb-4">
-              Simplified 3-card poker. Beat the dealer to win 2x your bet. Three of a Kind beats Pair beats High Card.
+              Simplified 3-card poker. Beat the dealer to win 2x your bet. Straight Flush > 3-of-a-Kind > Straight > Flush > Pair > High Card.
             </p>
             <div className="flex gap-2">
               <span className="text-xs bg-purple-900/50 text-purple-300 px-2 py-1 rounded">Win = 2x payout</span>
