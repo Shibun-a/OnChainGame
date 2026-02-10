@@ -25,6 +25,7 @@ contract GameCoreTest is Test {
         // Create Subscription
         subscriptionId = vrfCoordinator.createSubscription();
         vrfCoordinator.fundSubscription(subscriptionId, 100 ether);
+        vrfCoordinator.fundSubscriptionWithNative{value: 100 ether}(subscriptionId);
         
         // Deploy GameCore
         game = new GameCore(
