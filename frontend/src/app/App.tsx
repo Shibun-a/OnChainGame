@@ -18,7 +18,8 @@ function App() {
     loadSupportedTokens()
 
     // Auto-reconnect: only check if already authorized, don't prompt
-    if (window.ethereum && !isConnected) {
+    const shouldAutoReconnect = localStorage.getItem('walletConnected') === 'true'
+    if (window.ethereum && !isConnected && shouldAutoReconnect) {
       window.ethereum.request({ method: 'eth_accounts' }).then((accounts) => {
         const accs = accounts as string[]
         if (accs.length > 0) {
