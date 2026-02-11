@@ -131,6 +131,37 @@ class RealContractClient {
   }
 
   async getPokerResult(requestId: bigint): Promise<PokerBet | null> {
+    const settledLogs = await publicClient.getContractEvents({
+      address: GAME_CORE_ADDRESS,
+      abi: gameCoreAbi,
+      eventName: 'PokerBetSettled',
+      args: { requestId },
+      fromBlock: 'earliest',
+    })
+
+    const settledLog = settledLogs[settledLogs.length - 1]
+    if (settledLog) {
+      const args = (settledLog as unknown as { args: {
+        playerHand: number
+        dealerHand: number
+        payout: bigint
+        win: boolean
+      } }).args
+
+      return {
+        requestId,
+        player: '0x' as Address,
+        amount: 0n,
+        token: ETH_ADDRESS,
+        settled: true,
+        playerHandRank: Number(args.playerHand),
+        dealerHandRank: Number(args.dealerHand),
+        payout: args.payout,
+        result: this.toPokerOutcome(args.win, args.payout),
+        timestamp: Date.now(),
+      }
+    }
+
     const data = (await publicClient.readContract({
       address: GAME_CORE_ADDRESS,
       abi: gameCoreAbi,
@@ -259,10 +290,9 @@ class RealContractClient {
           token: Address
         } }).args
         const settled = settledMap.get(args.requestId)
-        let result: 'win' | 'loss' | 'tie' | undefined
-        if (settled) {
-          result = settled.win ? 'win' : 'loss'
-        }
+        const result = settled
+          ? this.toPokerOutcome(settled.win, settled.payout)
+          : undefined
         return {
           requestId: args.requestId,
           player: args.player,
@@ -431,6 +461,11 @@ class RealContractClient {
       }
     }
     throw new Error(`${eventName} event not found in transaction`)
+  }
+
+  private toPokerOutcome(win: boolean, payout: bigint): 'win' | 'loss' | 'tie' {
+    if (win) return 'win'
+    return payout > 0n ? 'tie' : 'loss'
   }
 }
 
