@@ -3,6 +3,8 @@ import { PendingBadge } from './PendingBadge'
 import { formatEth, formatCards, formatHandRank } from '@/utils/format'
 import { cn } from '@/utils/format'
 import type { DiceBet, PokerBet } from '@/contracts/types'
+import { useGameStore } from '@/stores/gameStore'
+import { ETH_ADDRESS } from '@/contracts/types'
 
 interface DiceResultPanelProps {
   bet: DiceBet
@@ -12,6 +14,8 @@ export function DiceResultPanel({ bet }: DiceResultPanelProps) {
   if (!bet.settled) return <PendingBadge requestId={bet.requestId} />
 
   const isWin = bet.win
+  const { tokenInfo } = useGameStore()
+  const tokenSymbol = bet.token === ETH_ADDRESS ? 'ETH' : (tokenInfo.get(bet.token)?.symbol || 'TOKEN')
 
   return (
     <Card className={cn(
@@ -42,7 +46,7 @@ export function DiceResultPanel({ bet }: DiceResultPanelProps) {
         <div className="flex justify-between items-center pt-2 border-t border-gray-700">
           <span className="text-gray-400">Payout</span>
           <span className={cn('text-xl font-bold', isWin ? 'text-green-400' : 'text-red-400')}>
-            {formatEth(bet.payout ?? 0n)} ETH
+            {formatEth(bet.payout ?? 0n)} {tokenSymbol}
           </span>
         </div>
       </div>
@@ -59,6 +63,8 @@ export function PokerResultPanel({ bet }: PokerResultPanelProps) {
 
   const isWin = bet.result === 'win'
   const isTie = bet.result === 'tie'
+  const { tokenInfo } = useGameStore()
+  const tokenSymbol = bet.token === ETH_ADDRESS ? 'ETH' : (tokenInfo.get(bet.token)?.symbol || 'TOKEN')
 
   return (
     <Card className={cn(
@@ -97,7 +103,7 @@ export function PokerResultPanel({ bet }: PokerResultPanelProps) {
             'text-xl font-bold',
             isWin ? 'text-green-400' : isTie ? 'text-yellow-400' : 'text-red-400',
           )}>
-            {formatEth(bet.payout ?? 0n)} ETH
+            {formatEth(bet.payout ?? 0n)} {tokenSymbol}
           </span>
         </div>
       </div>
