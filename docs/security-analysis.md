@@ -107,6 +107,13 @@ The VRF callback (`fulfillRandomWords`) is internal and called by the VRF Coordi
 | No formal audit | High | Recommended before mainnet deployment |
 | Single-owner admin control | Medium | Consider multi-sig or timelock for production |
 
+## Future Improvements
+Short-Term — Add Pausable emergency stop · Implement NFT metadata via IPFS · Multi-wallet support (RainbowKit) · Frontend test coverage
+
+Medium-Term — Multi-sig + timelock governance · UUPS proxy upgradeability · The Graph subgraph for event indexing · More achievement types · Gas optimization (storage packing)
+
+Long-Term — Multi-chain deployment (Arbitrum, Base) · More game types (Roulette, Slots) · DAO governance · Professional security audit · Chainlink Automation for settlement retry
+
 ## Recommendations for Production
 
 1. **Formal Audit**: Get professional audit before mainnet deployment

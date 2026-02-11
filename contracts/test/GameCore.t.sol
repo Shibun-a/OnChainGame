@@ -99,4 +99,60 @@ contract GameCoreTest is Test {
         // Final: 9.99 + 0.0196 = 10.0096
         assertEq(player.balance, 10 ether - betAmount + expectedPayout);
     }
+
+    // ============ Fuzz Tests ============
+
+    /// @notice Any valid bet amount in [minBet, maxBet] should be accepted
+    function testFuzz_betDiceValidAmount(uint256 amount) public {
+        amount = bound(amount, 0.001 ether, 1 ether);
+        vm.prank(player);
+        uint256 requestId = game.betDice{value: amount}(50, 2, address(0), amount);
+        (uint8 result, , ) = game.getDiceResult(requestId);
+        assertEq(result, 0, "Unsettled bet should have result 0");
+    }
+
+    /// @notice Any multiplier outside {2, 5, 10} must revert
+    function testFuzz_betDiceRejectsInvalidMultiplier(uint8 multiplier) public {
+        vm.assume(multiplier != 2 && multiplier != 5 && multiplier != 10);
+        vm.prank(player);
+        vm.expectRevert("Invalid multiplier");
+        game.betDice{value: 0.01 ether}(50, multiplier, address(0), 0.01 ether);
+    }
+
+    /// @notice Dice result is always in [1, 100] regardless of VRF randomness
+    function testFuzz_diceResultAlwaysInRange(uint256 randomWord) public {
+        vm.prank(player);
+        uint256 requestId = game.betDice{value: 0.01 ether}(50, 2, address(0), 0.01 ether);
+
+        uint256[] memory randomWords = new uint256[](1);
+        randomWords[0] = randomWord;
+        vrfCoordinator.fulfillRandomWordsWithOverride(requestId, address(game), randomWords);
+
+        (uint8 result, , ) = game.getDiceResult(requestId);
+        assertTrue(result >= 1 && result <= 100, "Dice result must be in [1,100]");
+    }
+
+    /// @notice Payout never exceeds the reward pool balance before the bet
+    function testFuzz_payoutNeverExceedsPool(uint256 amount, uint256 randomWord) public {
+        amount = bound(amount, 0.001 ether, 1 ether);
+        uint256 poolBefore = game.rewardPool();
+
+        vm.prank(player);
+        uint256 requestId = game.betDice{value: amount}(50, 10, address(0), amount);
+
+        uint256[] memory randomWords = new uint256[](1);
+        randomWords[0] = randomWord;
+        vrfCoordinator.fulfillRandomWordsWithOverride(requestId, address(game), randomWords);
+
+        (, uint256 payout, ) = game.getDiceResult(requestId);
+        assertLe(payout, poolBefore, "Payout must not exceed reward pool");
+    }
+
+    /// @notice Bet amounts below minBet must revert
+    function testFuzz_betDiceRejectsBelowMin(uint256 amount) public {
+        amount = bound(amount, 1, 0.001 ether - 1);
+        vm.prank(player);
+        vm.expectRevert("Bet out of range");
+        game.betDice{value: amount}(50, 2, address(0), amount);
+    }
 }

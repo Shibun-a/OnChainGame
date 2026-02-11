@@ -1,12 +1,12 @@
-import type { Address, Abi } from 'viem'
+import type { Address } from 'viem'
 import { decodeEventLog } from 'viem'
 import type { GameConfig, DiceBet, PokerBet, TokenInfo, Achievement } from '@/contracts/types'
 import { publicClient, getWalletClient } from '@/contracts/clients'
 import { GAME_CORE_ADDRESS, ETH_ADDRESS } from '@/contracts/addresses'
-import GameCoreABI from '@/contracts/abi/GameCore.json'
+import GameCoreArtifact from '@/contracts/abi/GameCore.json'
 import { mockAchievements } from '@/mocks/mockData'
 
-const gameCoreAbi = (GameCoreABI as { abi: Abi }).abi
+const GameCoreABI = (GameCoreArtifact as any).abi ?? GameCoreArtifact
 
 // Minimal ERC20 ABI for approve / balanceOf / allowance
 const erc20Abi = [
@@ -49,7 +49,7 @@ class RealContractClient {
   async getGameConfig(): Promise<GameConfig> {
     const data = (await publicClient.readContract({
       address: GAME_CORE_ADDRESS,
-      abi: gameCoreAbi,
+      abi: GameCoreABI,
       functionName: 'getGameConfig',
     })) as [bigint, bigint, bigint, bigint]
 
@@ -64,7 +64,7 @@ class RealContractClient {
   async getSupportedTokens(): Promise<Address[]> {
     return (await publicClient.readContract({
       address: GAME_CORE_ADDRESS,
-      abi: gameCoreAbi,
+      abi: GameCoreABI,
       functionName: 'getSupportedTokens',
     })) as Address[]
   }
@@ -72,7 +72,7 @@ class RealContractClient {
   async getTokenInfo(token: Address): Promise<TokenInfo> {
     const data = (await publicClient.readContract({
       address: GAME_CORE_ADDRESS,
-      abi: gameCoreAbi,
+      abi: GameCoreABI,
       functionName: 'getTokenInfo',
       args: [token],
     })) as [string, number, boolean]
@@ -110,7 +110,7 @@ class RealContractClient {
   async getDiceResult(requestId: bigint): Promise<DiceBet | null> {
     const data = (await publicClient.readContract({
       address: GAME_CORE_ADDRESS,
-      abi: gameCoreAbi,
+      abi: GameCoreABI,
       functionName: 'getDiceResult',
       args: [requestId],
     })) as [number, bigint, boolean]
@@ -131,40 +131,9 @@ class RealContractClient {
   }
 
   async getPokerResult(requestId: bigint): Promise<PokerBet | null> {
-    const settledLogs = await publicClient.getContractEvents({
-      address: GAME_CORE_ADDRESS,
-      abi: gameCoreAbi,
-      eventName: 'PokerBetSettled',
-      args: { requestId },
-      fromBlock: 'earliest',
-    })
-
-    const settledLog = settledLogs[settledLogs.length - 1]
-    if (settledLog) {
-      const args = (settledLog as unknown as { args: {
-        playerHand: number
-        dealerHand: number
-        payout: bigint
-        win: boolean
-      } }).args
-
-      return {
-        requestId,
-        player: '0x' as Address,
-        amount: 0n,
-        token: ETH_ADDRESS,
-        settled: true,
-        playerHandRank: Number(args.playerHand),
-        dealerHandRank: Number(args.dealerHand),
-        payout: args.payout,
-        result: this.toPokerOutcome(args.win, args.payout),
-        timestamp: Date.now(),
-      }
-    }
-
     const data = (await publicClient.readContract({
       address: GAME_CORE_ADDRESS,
-      abi: gameCoreAbi,
+      abi: GameCoreABI,
       functionName: 'getPokerResult',
       args: [requestId],
     })) as [number, number, bigint, boolean]
@@ -187,7 +156,7 @@ class RealContractClient {
     // 1. Get all DiceBetPlaced events for this player
     const placedLogs = await publicClient.getContractEvents({
       address: GAME_CORE_ADDRESS,
-      abi: gameCoreAbi,
+      abi: GameCoreABI,
       eventName: 'DiceBetPlaced',
       args: { player },
       fromBlock: 'earliest',
@@ -196,7 +165,7 @@ class RealContractClient {
     // 2. Get all DiceBetSettled events
     const settledLogs = await publicClient.getContractEvents({
       address: GAME_CORE_ADDRESS,
-      abi: gameCoreAbi,
+      abi: GameCoreABI,
       eventName: 'DiceBetSettled',
       fromBlock: 'earliest',
     })
@@ -245,7 +214,7 @@ class RealContractClient {
     // 1. Get all PokerBetPlaced events for this player
     const placedLogs = await publicClient.getContractEvents({
       address: GAME_CORE_ADDRESS,
-      abi: gameCoreAbi,
+      abi: GameCoreABI,
       eventName: 'PokerBetPlaced',
       args: { player },
       fromBlock: 'earliest',
@@ -254,7 +223,7 @@ class RealContractClient {
     // 2. Get all PokerBetSettled events
     const settledLogs = await publicClient.getContractEvents({
       address: GAME_CORE_ADDRESS,
-      abi: gameCoreAbi,
+      abi: GameCoreABI,
       eventName: 'PokerBetSettled',
       fromBlock: 'earliest',
     })
@@ -290,9 +259,10 @@ class RealContractClient {
           token: Address
         } }).args
         const settled = settledMap.get(args.requestId)
-        const result = settled
-          ? this.toPokerOutcome(settled.win, settled.payout)
-          : undefined
+        let result: 'win' | 'loss' | 'tie' | undefined
+        if (settled) {
+          result = settled.win ? 'win' : 'loss'
+        }
         return {
           requestId: args.requestId,
           player: args.player,
@@ -312,7 +282,7 @@ class RealContractClient {
   async getAchievements(player: Address): Promise<Achievement[]> {
     const earnedIds = (await publicClient.readContract({
       address: GAME_CORE_ADDRESS,
-      abi: gameCoreAbi,
+      abi: GameCoreABI,
       functionName: 'getAchievements',
       args: [player],
     })) as bigint[]
@@ -329,7 +299,7 @@ class RealContractClient {
   async getReferrer(player: Address): Promise<Address | null> {
     const data = (await publicClient.readContract({
       address: GAME_CORE_ADDRESS,
-      abi: gameCoreAbi,
+      abi: GameCoreABI,
       functionName: 'getPlayerStats',
       args: [player],
     })) as [bigint, bigint, bigint, Address]
@@ -364,7 +334,7 @@ class RealContractClient {
     const isETH = token === ETH_ADDRESS
     const hash = await walletClient.writeContract({
       address: GAME_CORE_ADDRESS,
-      abi: gameCoreAbi,
+      abi: GameCoreABI,
       functionName: 'betDice',
       args: [chosenNumber, multiplier, token, amount],
       value: isETH ? amount : 0n,
@@ -382,7 +352,7 @@ class RealContractClient {
     const isETH = token === ETH_ADDRESS
     const hash = await walletClient.writeContract({
       address: GAME_CORE_ADDRESS,
-      abi: gameCoreAbi,
+      abi: GameCoreABI,
       functionName: 'betPoker',
       args: [0, token, amount], // handChoice fixed at 0
       value: isETH ? amount : 0n,
@@ -399,7 +369,7 @@ class RealContractClient {
 
     const hash = await walletClient.writeContract({
       address: GAME_CORE_ADDRESS,
-      abi: gameCoreAbi,
+      abi: GameCoreABI,
       functionName: 'setReferrer',
       args: [referrer],
       account,
@@ -414,7 +384,7 @@ class RealContractClient {
 
     const hash = await walletClient.writeContract({
       address: GAME_CORE_ADDRESS,
-      abi: gameCoreAbi,
+      abi: GameCoreABI,
       functionName: 'claimReferralRewards',
       args: [],
       account,
@@ -449,23 +419,18 @@ class RealContractClient {
     for (const log of logs) {
       try {
         const event = decodeEventLog({
-          abi: gameCoreAbi,
+          abi: GameCoreABI,
           data: log.data,
           topics: log.topics as [`0x${string}`, ...`0x${string}`[]],
-        })
+        }) as { eventName: string; args: Record<string, unknown> }
         if (event.eventName === eventName) {
-          return (event.args as unknown as { requestId: bigint }).requestId
+          return event.args.requestId as bigint
         }
       } catch {
         // Not the target event, skip
       }
     }
     throw new Error(`${eventName} event not found in transaction`)
-  }
-
-  private toPokerOutcome(win: boolean, payout: bigint): 'win' | 'loss' | 'tie' {
-    if (win) return 'win'
-    return payout > 0n ? 'tie' : 'loss'
   }
 }
 

@@ -6,7 +6,9 @@ import { useWalletStore } from '@/stores/walletStore'
 import { USE_MOCK_CONTRACTS } from '@/contracts'
 import { publicClient } from '@/contracts/clients'
 import { GAME_CORE_ADDRESS } from '@/contracts/addresses'
-import GameCoreABI from '@/contracts/abi/GameCore.json'
+import GameCoreArtifact from '@/contracts/abi/GameCore.json'
+
+const GameCoreABI = (GameCoreArtifact as any).abi ?? GameCoreArtifact
 
 const gameCoreAbi = (GameCoreABI as { abi: Abi }).abi
 

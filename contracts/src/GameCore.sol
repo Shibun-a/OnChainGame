@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {VRFConsumerBaseV2} from "@chainlink/contracts/src/v0.8/vrf/VRFConsumerBaseV2.sol";
-import {VRFCoordinatorV2Interface} from "@chainlink/contracts/src/v0.8/vrf/interfaces/VRFCoordinatorV2Interface.sol";
+import {VRFConsumerBaseV2Plus} from "@chainlink/contracts/src/v0.8/vrf/dev/VRFConsumerBaseV2Plus.sol";
+import {VRFV2PlusClient} from "@chainlink/contracts/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
 
 import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 contract GameCore is VRFConsumerBaseV2Plus, ERC721, ReentrancyGuard {
@@ -87,11 +86,9 @@ contract GameCore is VRFConsumerBaseV2Plus, ERC721, ReentrancyGuard {
         uint256 _subscriptionId,
         bytes32 _keyHash
     ) 
-        VRFConsumerBaseV2(_vrfCoordinator) 
+        VRFConsumerBaseV2Plus(_vrfCoordinator) 
         ERC721("GameAchievements", "GACH") 
-        Ownable(msg.sender) 
     {
-        vrfCoordinator = VRFCoordinatorV2Interface(_vrfCoordinator);
         subscriptionId = _subscriptionId;
         keyHash = _keyHash;
 
@@ -425,35 +422,31 @@ contract GameCore is VRFConsumerBaseV2Plus, ERC721, ReentrancyGuard {
         
         uint8 handRank = _evaluateHand(cards);
         
-        // Base scores:
-        // SF: 500,000
-        // 3K: 400,000
-        // ST: 300,000
-        // FL: 200,000
-        // PR: 100,000
-        // HC: 0
+        // Base scores use 1,000,000 spacing to prevent overlap:
+        // HC max = 14*10000+13*100+12 = 141,312 < 1,000,000 (PR base)
+        // PR max = 1,000,000+14*100+14 = 1,001,414 < 2,000,000 (FL base)
+        // FL max = 2,000,000+141,312 = 2,141,312 < 3,000,000 (ST base)
+        uint32 base = uint32(handRank) * 1000000;
         
         if (handRank == 5) { // Straight Flush
-            // Tie break by high card. A-2-3 (14,2,3) is lowest straight (3 high). 
-            if (ranks[0] == 2 && ranks[1] == 3 && ranks[2] == 14) return 500000 + 3; 
-            return 500000 + uint32(ranks[2]);
+            if (ranks[0] == 2 && ranks[1] == 3 && ranks[2] == 14) return base + 3; 
+            return base + uint32(ranks[2]);
         }
         if (handRank == 4) { // Three of a Kind
-            return 400000 + uint32(ranks[0]);
+            return base + uint32(ranks[0]);
         }
         if (handRank == 3) { // Straight
-             if (ranks[0] == 2 && ranks[1] == 3 && ranks[2] == 14) return 300000 + 3;
-             return 300000 + uint32(ranks[2]);
+             if (ranks[0] == 2 && ranks[1] == 3 && ranks[2] == 14) return base + 3;
+             return base + uint32(ranks[2]);
         }
         if (handRank == 2) { // Flush
-            // Compare High, then Mid, then Low
-            return 200000 + uint32(ranks[2]) * 10000 + uint32(ranks[1]) * 100 + uint32(ranks[0]);
+            return base + uint32(ranks[2]) * 10000 + uint32(ranks[1]) * 100 + uint32(ranks[0]);
         }
         if (handRank == 1) { // Pair
-            if (ranks[0] == ranks[1]) { // Pair is ranks[0], Kicker ranks[2]
-                return 100000 + uint32(ranks[0]) * 100 + uint32(ranks[2]);
-            } else { // Pair is ranks[1], Kicker ranks[0]
-                return 100000 + uint32(ranks[1]) * 100 + uint32(ranks[0]);
+            if (ranks[0] == ranks[1]) {
+                return base + uint32(ranks[0]) * 100 + uint32(ranks[2]);
+            } else {
+                return base + uint32(ranks[1]) * 100 + uint32(ranks[0]);
             }
         }
         // High Card

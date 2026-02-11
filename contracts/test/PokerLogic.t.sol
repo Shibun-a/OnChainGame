@@ -126,4 +126,45 @@ contract PokerLogicTest is Test {
         
         assertTrue(scoreFlush > scorePair, "Flush should beat Pair");
     }
+
+    // ============ Fuzz Tests ============
+
+    /// @notice Hand rank is always in [0, 5] for any valid 3-card combination
+    function testFuzz_evaluateHandAlwaysValidRank(uint8 c1, uint8 c2, uint8 c3) public {
+        c1 = uint8(bound(uint256(c1), 1, 52));
+        c2 = uint8(bound(uint256(c2), 1, 52));
+        c3 = uint8(bound(uint256(c3), 1, 52));
+        vm.assume(c1 != c2 && c2 != c3 && c1 != c3);
+
+        uint8[3] memory cards = [c1, c2, c3];
+        uint8 rank = game.exposeEvaluateHand(cards);
+        assertTrue(rank <= 5, "Hand rank must be 0-5");
+    }
+
+    /// @notice A hand with a strictly higher rank always has a higher score
+    function testFuzz_higherRankMeansHigherScore(
+        uint8 c1, uint8 c2, uint8 c3,
+        uint8 c4, uint8 c5, uint8 c6
+    ) public {
+        c1 = uint8(bound(uint256(c1), 1, 52));
+        c2 = uint8(bound(uint256(c2), 1, 52));
+        c3 = uint8(bound(uint256(c3), 1, 52));
+        c4 = uint8(bound(uint256(c4), 1, 52));
+        c5 = uint8(bound(uint256(c5), 1, 52));
+        c6 = uint8(bound(uint256(c6), 1, 52));
+        vm.assume(c1 != c2 && c1 != c3 && c2 != c3);
+        vm.assume(c4 != c5 && c4 != c6 && c5 != c6);
+
+        uint8[3] memory hand1 = [c1, c2, c3];
+        uint8[3] memory hand2 = [c4, c5, c6];
+
+        uint8 rank1 = game.exposeEvaluateHand(hand1);
+        uint8 rank2 = game.exposeEvaluateHand(hand2);
+        uint32 score1 = game.exposeCalculateScore(hand1);
+        uint32 score2 = game.exposeCalculateScore(hand2);
+
+        if (rank1 > rank2) {
+            assertGt(score1, score2, "Higher rank must yield higher score");
+        }
+    }
 }
