@@ -66,12 +66,24 @@ export default function PokerPage() {
                 <h4 className="text-sm font-semibold text-gray-300">Hand Rankings</h4>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between bg-gray-700/50 rounded p-2">
+                    <span>Straight Flush</span>
+                    <span className="text-purple-400 font-bold">Highest</span>
+                  </div>
+                  <div className="flex justify-between bg-gray-700/50 rounded p-2">
                     <span>Three of a Kind</span>
-                    <span className="text-purple-400 font-semibold">Highest</span>
+                    <span className="text-purple-400 font-semibold">Very High</span>
+                  </div>
+                  <div className="flex justify-between bg-gray-700/50 rounded p-2">
+                    <span>Straight</span>
+                    <span className="text-purple-400">High</span>
+                  </div>
+                  <div className="flex justify-between bg-gray-700/50 rounded p-2">
+                    <span>Flush</span>
+                    <span className="text-purple-300">Medium</span>
                   </div>
                   <div className="flex justify-between bg-gray-700/50 rounded p-2">
                     <span>Pair</span>
-                    <span className="text-purple-400">Medium</span>
+                    <span className="text-purple-200">Low</span>
                   </div>
                   <div className="flex justify-between bg-gray-700/50 rounded p-2">
                     <span>High Card</span>

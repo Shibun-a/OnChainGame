@@ -12,6 +12,23 @@ import {
   MOCK_ERC20_ADDRESS,
 } from './mockData'
 
+const STORAGE_KEY_DICE = 'mock:diceBets'
+const STORAGE_KEY_POKER = 'mock:pokerBets'
+
+function replacer(_key: string, value: any) {
+  if (typeof value === 'bigint') {
+    return { __type: 'bigint', value: value.toString() }
+  }
+  return value
+}
+
+function reviver(_key: string, value: any) {
+  if (value && typeof value === 'object' && value.__type === 'bigint') {
+    return BigInt(value.value)
+  }
+  return value
+}
+
 class MockContractClient {
   private diceBets = new Map<bigint, DiceBet>()
   private pokerBets = new Map<bigint, PokerBet>()
@@ -23,8 +40,48 @@ class MockContractClient {
   private erc20Allowances = new Map<string, Map<string, bigint>>()
 
   constructor() {
-    mockDiceBetHistory.forEach(bet => this.diceBets.set(bet.requestId, bet))
-    mockPokerBetHistory.forEach(bet => this.pokerBets.set(bet.requestId, bet))
+    this.loadFromStorage()
+  }
+
+  private loadFromStorage() {
+    try {
+      const diceData = localStorage.getItem(STORAGE_KEY_DICE)
+      if (diceData) {
+        const bets = JSON.parse(diceData, reviver) as DiceBet[]
+        bets.forEach(b => this.diceBets.set(b.requestId, b))
+      } else {
+        mockDiceBetHistory.forEach(bet => this.diceBets.set(bet.requestId, bet))
+      }
+
+      const pokerData = localStorage.getItem(STORAGE_KEY_POKER)
+      if (pokerData) {
+        const bets = JSON.parse(pokerData, reviver) as PokerBet[]
+        bets.forEach(b => this.pokerBets.set(b.requestId, b))
+      } else {
+        mockPokerBetHistory.forEach(bet => this.pokerBets.set(bet.requestId, bet))
+      }
+      
+      // Update nextRequestId to avoid collision
+      let maxId = 0n
+      for (const id of this.diceBets.keys()) if (id > maxId) maxId = id
+      for (const id of this.pokerBets.keys()) if (id > maxId) maxId = id
+      if (maxId >= 100n) this.nextRequestId = maxId + 1n
+
+    } catch (e) {
+      console.error('Failed to load mock data from storage', e)
+      // Fallback
+      mockDiceBetHistory.forEach(bet => this.diceBets.set(bet.requestId, bet))
+      mockPokerBetHistory.forEach(bet => this.pokerBets.set(bet.requestId, bet))
+    }
+  }
+
+  private saveToStorage() {
+    try {
+      localStorage.setItem(STORAGE_KEY_DICE, JSON.stringify(Array.from(this.diceBets.values()), replacer))
+      localStorage.setItem(STORAGE_KEY_POKER, JSON.stringify(Array.from(this.pokerBets.values()), replacer))
+    } catch (e) {
+      console.error('Failed to save mock data to storage', e)
+    }
   }
 
   private delay(ms: number): Promise<void> {
@@ -220,6 +277,7 @@ class MockContractClient {
       settled: false, timestamp: Date.now(),
     }
     this.pokerBets.set(requestId, bet)
+    this.saveToStorage()
 
     // Achievement: first poker bet
     const key = player.toLowerCase()
@@ -289,6 +347,7 @@ class MockContractClient {
     }
 
     Object.assign(bet, { settled: true, result, payout, win })
+    this.saveToStorage()
     this.emit('DiceBetSettled', { requestId, result, payout, win })
   }
 
@@ -321,6 +380,7 @@ class MockContractClient {
     }
 
     Object.assign(bet, { settled: true, playerCards, dealerCards, playerHandRank, dealerHandRank, payout, result })
+    this.saveToStorage()
     this.emit('PokerBetSettled', { requestId, playerCards, dealerCards, playerHandRank, dealerHandRank, payout, win: result !== 'loss' })
   }
 

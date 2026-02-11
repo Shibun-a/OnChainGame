@@ -9,7 +9,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-contract GameCore is VRFConsumerBaseV2, ERC721, Ownable, ReentrancyGuard {
+contract GameCore is VRFConsumerBaseV2Plus, ERC721, ReentrancyGuard {
 
     // ============ State Variables ============
 
@@ -20,10 +20,9 @@ contract GameCore is VRFConsumerBaseV2, ERC721, Ownable, ReentrancyGuard {
     uint256 public rewardPool;
 
     // VRF config
-    VRFCoordinatorV2Interface private vrfCoordinator;
-    uint64 public subscriptionId;
+    uint256 public subscriptionId;
     bytes32 public keyHash;
-    uint32 public callbackGasLimit = 200000;
+    uint32 public callbackGasLimit = 500000;
     uint16 public requestConfirmations = 3;
 
     // Token whitelist
@@ -85,7 +84,7 @@ contract GameCore is VRFConsumerBaseV2, ERC721, Ownable, ReentrancyGuard {
 
     constructor(
         address _vrfCoordinator,
-        uint64 _subscriptionId,
+        uint256 _subscriptionId,
         bytes32 _keyHash
     ) 
         VRFConsumerBaseV2(_vrfCoordinator) 
@@ -101,7 +100,11 @@ contract GameCore is VRFConsumerBaseV2, ERC721, Ownable, ReentrancyGuard {
         isTokenSupported[address(0)] = true;
     }
 
-    // ============ Admin Functions ============
+    // Allow receiving ETH to fund the reward pool
+    receive() external payable {
+        rewardPool += msg.value;
+    }
+        // ============ Admin Functions ============
 
     function addSupportedToken(address token) external onlyOwner {
         require(!isTokenSupported[token], "Already supported");
@@ -152,6 +155,10 @@ contract GameCore is VRFConsumerBaseV2, ERC721, Ownable, ReentrancyGuard {
         return (bet.playerHandRank, bet.dealerHandRank, bet.payout, bet.payout > 0);
     }
 
+    function getFullPokerBet(uint256 requestId) external view returns (PokerBet memory) {
+        return pokerBets[requestId];
+    }
+
     function getAchievements(address player) external view returns (uint256[] memory) {
         uint256 count = 0;
         if (hasDiceAchievement[player]) count++;
@@ -188,8 +195,17 @@ contract GameCore is VRFConsumerBaseV2, ERC721, Ownable, ReentrancyGuard {
         require(rewardPool >= maxPayout, "Reward pool insufficient");
 
         // Request VRF
-        requestId = vrfCoordinator.requestRandomWords(
-            keyHash, subscriptionId, requestConfirmations, callbackGasLimit, 1
+        requestId = s_vrfCoordinator.requestRandomWords(
+            VRFV2PlusClient.RandomWordsRequest({
+                keyHash: keyHash,
+                subId: subscriptionId,
+                requestConfirmations: requestConfirmations,
+                callbackGasLimit: callbackGasLimit,
+                numWords: 1,
+                extraArgs: VRFV2PlusClient._argsToBytes(
+                    VRFV2PlusClient.ExtraArgsV1({nativePayment: true})
+                )
+            })
         );
 
         // Store bet
@@ -241,8 +257,17 @@ contract GameCore is VRFConsumerBaseV2, ERC721, Ownable, ReentrancyGuard {
         uint256 maxPayout = (amount * 2 * (10000 - houseEdgeBps)) / 10000;
         require(rewardPool >= maxPayout, "Reward pool insufficient");
 
-        requestId = vrfCoordinator.requestRandomWords(
-            keyHash, subscriptionId, requestConfirmations, callbackGasLimit, 1
+        requestId = s_vrfCoordinator.requestRandomWords(
+            VRFV2PlusClient.RandomWordsRequest({
+                keyHash: keyHash,
+                subId: subscriptionId,
+                requestConfirmations: requestConfirmations,
+                callbackGasLimit: callbackGasLimit,
+                numWords: 1,
+                extraArgs: VRFV2PlusClient._argsToBytes(
+                    VRFV2PlusClient.ExtraArgsV1({nativePayment: true})
+                )
+            })
         );
 
         pokerBets[requestId] = PokerBet({
@@ -274,7 +299,7 @@ contract GameCore is VRFConsumerBaseV2, ERC721, Ownable, ReentrancyGuard {
 
     // ============ VRF Callback ============
 
-    function fulfillRandomWords(uint256 requestId, uint256[] memory randomWords) internal override {
+    function fulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) internal override {
         if (isDiceRequest[requestId]) {
             _settleDice(requestId, randomWords[0]);
         } else {
@@ -314,11 +339,21 @@ contract GameCore is VRFConsumerBaseV2, ERC721, Ownable, ReentrancyGuard {
         PokerBet storage bet = pokerBets[requestId];
         require(!bet.settled, "Already settled");
 
-        // Generate 6 cards from random word
+        // Generate 6 unique cards from 52 card deck
         uint256 seed = randomWord;
         uint8[6] memory cards;
-        for (uint8 i = 0; i < 6; i++) {
-            cards[i] = uint8((seed % 13) + 1);
+        uint8 count = 0;
+        uint256 drawnMask = 0;
+
+        while (count < 6) {
+            uint8 card = uint8(seed % 52);
+            // Check if card already drawn
+            if ((drawnMask & (1 << card)) == 0) {
+                drawnMask |= (1 << card);
+                // Store 1-52 (Card ID)
+                cards[count] = card + 1;
+                count++;
+            }
             seed = uint256(keccak256(abi.encode(seed)));
         }
 
@@ -328,8 +363,12 @@ contract GameCore is VRFConsumerBaseV2, ERC721, Ownable, ReentrancyGuard {
         bet.playerHandRank = _evaluateHand(bet.playerCards);
         bet.dealerHandRank = _evaluateHand(bet.dealerCards);
 
-        bool win = bet.playerHandRank > bet.dealerHandRank;
-        bool tie = bet.playerHandRank == bet.dealerHandRank;
+        // Calculate detailed scores for tie-breaking
+        uint32 playerScore = _calculateScore(bet.playerCards);
+        uint32 dealerScore = _calculateScore(bet.dealerCards);
+
+        bool win = playerScore > dealerScore;
+        bool tie = playerScore == dealerScore;
 
         if (win) {
             uint256 payout = (bet.amount * 2 * (10000 - houseEdgeBps)) / 10000;
@@ -353,14 +392,87 @@ contract GameCore is VRFConsumerBaseV2, ERC721, Ownable, ReentrancyGuard {
         emit PokerBetSettled(requestId, bet.playerHandRank, bet.dealerHandRank, bet.payout, win);
     }
 
-    function _evaluateHand(uint8[3] memory cards) private pure returns (uint8) {
-        uint8[3] memory s = _sort(cards);
-        if (s[0] == s[1] && s[1] == s[2]) return 2; // Three of a kind
-        if (s[0] == s[1] || s[1] == s[2]) return 1; // Pair
-        return 0; // High card
+    function _evaluateHand(uint8[3] memory cards) internal pure returns (uint8) {
+        uint8[3] memory ranks;
+        uint8[3] memory suits;
+        
+        for (uint i = 0; i < 3; i++) {
+            ranks[i] = _getRank(cards[i]);
+            suits[i] = _getSuit(cards[i]);
+        }
+        
+        ranks = _sort(ranks);
+        
+        bool isFlush = (suits[0] == suits[1] && suits[1] == suits[2]);
+        bool isStraight = (ranks[0] + 1 == ranks[1] && ranks[1] + 1 == ranks[2]);
+        // A-2-3 Straight (A=14, 2=2, 3=3). Sorted: 2,3,14.
+        if (ranks[0] == 2 && ranks[1] == 3 && ranks[2] == 14) isStraight = true;
+        
+        if (isFlush && isStraight) return 5; // Straight Flush
+        if (ranks[0] == ranks[1] && ranks[1] == ranks[2]) return 4; // Three of a Kind
+        if (isStraight) return 3; // Straight
+        if (isFlush) return 2; // Flush
+        if (ranks[0] == ranks[1] || ranks[1] == ranks[2]) return 1; // Pair
+        return 0; // High Card
     }
 
-    function _sort(uint8[3] memory arr) private pure returns (uint8[3] memory) {
+    function _calculateScore(uint8[3] memory cards) internal pure returns (uint32) {
+        uint8[3] memory ranks;
+        for (uint i = 0; i < 3; i++) {
+            ranks[i] = _getRank(cards[i]);
+        }
+        ranks = _sort(ranks);
+        
+        uint8 handRank = _evaluateHand(cards);
+        
+        // Base scores:
+        // SF: 500,000
+        // 3K: 400,000
+        // ST: 300,000
+        // FL: 200,000
+        // PR: 100,000
+        // HC: 0
+        
+        if (handRank == 5) { // Straight Flush
+            // Tie break by high card. A-2-3 (14,2,3) is lowest straight (3 high). 
+            if (ranks[0] == 2 && ranks[1] == 3 && ranks[2] == 14) return 500000 + 3; 
+            return 500000 + uint32(ranks[2]);
+        }
+        if (handRank == 4) { // Three of a Kind
+            return 400000 + uint32(ranks[0]);
+        }
+        if (handRank == 3) { // Straight
+             if (ranks[0] == 2 && ranks[1] == 3 && ranks[2] == 14) return 300000 + 3;
+             return 300000 + uint32(ranks[2]);
+        }
+        if (handRank == 2) { // Flush
+            // Compare High, then Mid, then Low
+            return 200000 + uint32(ranks[2]) * 10000 + uint32(ranks[1]) * 100 + uint32(ranks[0]);
+        }
+        if (handRank == 1) { // Pair
+            if (ranks[0] == ranks[1]) { // Pair is ranks[0], Kicker ranks[2]
+                return 100000 + uint32(ranks[0]) * 100 + uint32(ranks[2]);
+            } else { // Pair is ranks[1], Kicker ranks[0]
+                return 100000 + uint32(ranks[1]) * 100 + uint32(ranks[0]);
+            }
+        }
+        // High Card
+        return uint32(ranks[2]) * 10000 + uint32(ranks[1]) * 100 + uint32(ranks[0]);
+    }
+
+    function _getRank(uint8 card) internal pure returns (uint8) {
+        // card is 1-52
+        // (card-1)%13 is 0-12 (A,2...K)
+        uint8 r = (card - 1) % 13;
+        if (r == 0) return 14; // Ace is 14
+        return r + 1; // 2..13
+    }
+
+    function _getSuit(uint8 card) internal pure returns (uint8) {
+        return (card - 1) / 13;
+    }
+
+    function _sort(uint8[3] memory arr) internal pure returns (uint8[3] memory) {
         if (arr[0] > arr[1]) (arr[0], arr[1]) = (arr[1], arr[0]);
         if (arr[1] > arr[2]) (arr[1], arr[2]) = (arr[2], arr[1]);
         if (arr[0] > arr[1]) (arr[0], arr[1]) = (arr[1], arr[0]);
@@ -399,8 +511,5 @@ contract GameCore is VRFConsumerBaseV2, ERC721, Ownable, ReentrancyGuard {
         }
     }
 
-    // Allow contract to receive ETH
-    receive() external payable {
-        rewardPool += msg.value;
-    }
+
 }

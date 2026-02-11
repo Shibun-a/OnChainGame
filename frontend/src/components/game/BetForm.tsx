@@ -224,7 +224,7 @@ export function BetForm({ gameType, onBetPlaced }: BetFormProps) {
         {gameType === 'poker' && (
           <div className="mb-4 bg-gray-700/50 rounded-lg p-3 text-sm text-gray-400">
             <p>3-card poker: Beat the dealer to win 2x (minus 2% house edge)</p>
-            <p className="mt-1">Three of a Kind &gt; Pair &gt; High Card</p>
+            <p className="mt-1">Straight Flush &gt; 3-of-a-Kind &gt; Straight &gt; Flush &gt; Pair &gt; High Card</p>
           </div>
         )}
 
