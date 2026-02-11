@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { useEffect } from 'react'
 import { useWallet } from '@/hooks/useWallet'
+import { useBetHistory } from '@/hooks/useBetHistory'
 import { useGameStore } from '@/stores/gameStore'
 import { Card } from '@/components/common/Card'
 import { ConnectButton } from '@/components/wallet/ConnectButton'
@@ -8,8 +9,10 @@ import { BetHistory } from '@/components/game/BetHistory'
 import { formatEth } from '@/utils/format'
 
 export default function HomePage() {
-  const { isConnected } = useWallet()
+  const { address, isConnected } = useWallet()
   const { config, diceBets, pokerBets, loadConfig } = useGameStore()
+
+  useBetHistory(address)
 
   useEffect(() => {
     loadConfig()
