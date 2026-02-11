@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import type { Address } from 'viem'
+import type { Address, Abi } from 'viem'
 import { useGameStore } from '@/stores/gameStore'
 import { useAchievementStore } from '@/stores/achievementStore'
 import { useWalletStore } from '@/stores/walletStore'
@@ -7,6 +7,8 @@ import { USE_MOCK_CONTRACTS } from '@/contracts'
 import { publicClient } from '@/contracts/clients'
 import { GAME_CORE_ADDRESS } from '@/contracts/addresses'
 import GameCoreABI from '@/contracts/abi/GameCore.json'
+
+const gameCoreAbi = (GameCoreABI as { abi: Abi }).abi
 
 export function useContractEvents() {
   const { updateDiceResult, updatePokerResult } = useGameStore()
@@ -46,7 +48,7 @@ export function useContractEvents() {
     // === Real mode: watch on-chain events via viem ===
     const unwatchDice = publicClient.watchContractEvent({
       address: GAME_CORE_ADDRESS,
-      abi: GameCoreABI,
+      abi: gameCoreAbi,
       eventName: 'DiceBetSettled',
       onLogs: (logs) => {
         for (const log of logs) {
@@ -57,7 +59,7 @@ export function useContractEvents() {
 
     const unwatchPoker = publicClient.watchContractEvent({
       address: GAME_CORE_ADDRESS,
-      abi: GameCoreABI,
+      abi: gameCoreAbi,
       eventName: 'PokerBetSettled',
       onLogs: (logs) => {
         for (const log of logs) {
@@ -68,7 +70,7 @@ export function useContractEvents() {
 
     const unwatchAchievement = publicClient.watchContractEvent({
       address: GAME_CORE_ADDRESS,
-      abi: GameCoreABI,
+      abi: gameCoreAbi,
       eventName: 'AchievementMinted',
       onLogs: (logs) => {
         for (const log of logs) {
