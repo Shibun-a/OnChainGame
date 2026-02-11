@@ -14,7 +14,7 @@ type AnyBet = {
   timestamp: number
   settled: boolean
   payout?: bigint
-  win?: boolean
+  outcome: 'pending' | 'win' | 'loss' | 'tie'
   type: 'dice' | 'poker'
   detail: string
 }
@@ -29,7 +29,7 @@ export function BetHistory({ diceBets, pokerBets, filter = 'all' }: BetHistoryPr
       timestamp: b.timestamp,
       settled: b.settled,
       payout: b.payout,
-      win: b.win,
+      outcome: !b.settled ? 'pending' : b.win ? 'win' : 'loss',
       type: 'dice',
       detail: `${b.multiplier}x | Roll: ${b.result ?? '...'}`,
     }))
@@ -42,7 +42,7 @@ export function BetHistory({ diceBets, pokerBets, filter = 'all' }: BetHistoryPr
       timestamp: b.timestamp,
       settled: b.settled,
       payout: b.payout,
-      win: b.result === 'win',
+      outcome: !b.settled ? 'pending' : b.result === 'tie' ? 'tie' : b.result === 'win' ? 'win' : 'loss',
       type: 'poker',
       detail: b.settled ? (b.result ?? 'pending') : 'pending',
     }))
@@ -88,10 +88,12 @@ export function BetHistory({ diceBets, pokerBets, filter = 'all' }: BetHistoryPr
                 <td className="py-2 px-2 text-right font-mono">{formatEth(bet.amount)}</td>
                 <td className="py-2 px-2 text-gray-300">{bet.detail}</td>
                 <td className="py-2 px-2 text-center">
-                  {!bet.settled ? (
+                  {bet.outcome === 'pending' ? (
                     <span className="text-yellow-400 text-xs">Pending</span>
-                  ) : bet.win ? (
+                  ) : bet.outcome === 'win' ? (
                     <span className="text-green-400 text-xs font-semibold">Win</span>
+                  ) : bet.outcome === 'tie' ? (
+                    <span className="text-yellow-300 text-xs font-semibold">Tie</span>
                   ) : (
                     <span className="text-red-400 text-xs">Loss</span>
                   )}
