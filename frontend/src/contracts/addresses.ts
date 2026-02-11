@@ -5,7 +5,7 @@ export const SEPOLIA_CHAIN_ID = Number(import.meta.env.VITE_CHAIN_ID) || 1115511
 export const ETH_ADDRESS = '0x0000000000000000000000000000000000000000' as Address
 
 // Contract addresses - Update after deployment
-export const GAME_CORE_ADDRESS = (import.meta.env.VITE_GAME_CORE_ADDRESS || '0x68a0f2a2479a2E6A6D9D083fAda5a6c4824746f9') as Address
+export const GAME_CORE_ADDRESS = (import.meta.env.VITE_GAME_CORE_ADDRESS || '0x91acbb64811665ed40114c21292FAEA48602705E') as Address
 export const MOCK_ERC20_ADDRESS = (import.meta.env.VITE_MOCK_ERC20_ADDRESS || ETH_ADDRESS) as Address
 
 // Chainlink VRF Coordinator (Sepolia)
