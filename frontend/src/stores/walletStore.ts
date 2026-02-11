@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { Address } from 'viem'
-import { SEPOLIA_CHAIN_ID } from '@/contracts/types'
+import { contractClient } from '@/contracts'
+import { ETH_ADDRESS, SEPOLIA_CHAIN_ID } from '@/contracts/types'
 
 interface WalletState {
   address: Address | null
@@ -136,7 +137,19 @@ export const useWalletStore = create<WalletState>((set, get) => ({
         method: 'eth_getBalance',
         params: [address, 'latest'],
       })) as string
-      set({ ethBalance: BigInt(balance) })
+
+      const supportedTokens = await contractClient.getSupportedTokens()
+      const erc20Tokens = supportedTokens.filter(token => token !== ETH_ADDRESS)
+      const erc20Balances = new Map<Address, bigint>()
+
+      await Promise.all(
+        erc20Tokens.map(async (token) => {
+          const tokenBalance = await contractClient.getTokenBalance(address, token)
+          erc20Balances.set(token, tokenBalance)
+        }),
+      )
+
+      set({ ethBalance: BigInt(balance), erc20Balances })
     } catch (error) {
       console.error('Failed to update balances:', error)
     }

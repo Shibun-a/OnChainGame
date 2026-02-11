@@ -19,6 +19,8 @@ class MockContractClient {
   private playerAchievements = new Map<string, Set<number>>()
   private referrers = new Map<string, Address>()
   private referralRewards = new Map<string, Map<string, bigint>>()
+  private erc20Balances = new Map<string, Map<string, bigint>>()
+  private erc20Allowances = new Map<string, Map<string, bigint>>()
 
   constructor() {
     mockDiceBetHistory.forEach(bet => this.diceBets.set(bet.requestId, bet))
@@ -31,6 +33,29 @@ class MockContractClient {
 
   private emit(eventName: string, data: unknown) {
     window.dispatchEvent(new CustomEvent(`mock:${eventName}`, { detail: data }))
+  }
+
+  private getOrCreateTokenMap(
+    source: Map<string, Map<string, bigint>>,
+    player: Address,
+  ): Map<string, bigint> {
+    const key = player.toLowerCase()
+    if (!source.has(key)) source.set(key, new Map())
+    return source.get(key)!
+  }
+
+  private getOrCreateErc20Balance(player: Address, token: Address): bigint {
+    const balances = this.getOrCreateTokenMap(this.erc20Balances, player)
+    const tokenKey = token.toLowerCase()
+    if (!balances.has(tokenKey)) {
+      balances.set(tokenKey, 1000n * 10n ** 18n)
+    }
+    return balances.get(tokenKey) ?? 0n
+  }
+
+  private setErc20Balance(player: Address, token: Address, amount: bigint) {
+    const balances = this.getOrCreateTokenMap(this.erc20Balances, player)
+    balances.set(token.toLowerCase(), amount)
   }
 
   // ============ Read Methods ============
@@ -51,6 +76,19 @@ class MockContractClient {
       return { address: ETH_ADDRESS, symbol: 'ETH', decimals: 18, isNative: true }
     }
     return { address: token, symbol: 'MOCK', decimals: 18, isNative: false }
+  }
+
+  async getTokenBalance(player: Address, token: Address): Promise<bigint> {
+    await this.delay(80)
+    if (token === ETH_ADDRESS) return 0n
+    return this.getOrCreateErc20Balance(player, token)
+  }
+
+  async getTokenAllowance(player: Address, token: Address): Promise<bigint> {
+    await this.delay(80)
+    if (token === ETH_ADDRESS) return 0n
+    const allowances = this.getOrCreateTokenMap(this.erc20Allowances, player)
+    return allowances.get(token.toLowerCase()) ?? 0n
   }
 
   async getDiceResult(requestId: bigint): Promise<DiceBet | null> {
@@ -121,6 +159,19 @@ class MockContractClient {
   ): Promise<bigint> {
     await this.delay(400)
 
+    if (token !== ETH_ADDRESS) {
+      const balance = this.getOrCreateErc20Balance(player, token)
+      if (balance < amount) throw new Error('Insufficient token balance')
+
+      const allowances = this.getOrCreateTokenMap(this.erc20Allowances, player)
+      const tokenKey = token.toLowerCase()
+      const allowance = allowances.get(tokenKey) ?? 0n
+      if (allowance < amount) throw new Error('Insufficient allowance. Please approve token first.')
+
+      this.setErc20Balance(player, token, balance - amount)
+      allowances.set(tokenKey, allowance - amount)
+    }
+
     const requestId = this.nextRequestId++
     const bet: DiceBet = {
       requestId, player, amount, token, chosenNumber, multiplier,
@@ -149,6 +200,19 @@ class MockContractClient {
 
   async betPoker(player: Address, token: Address, amount: bigint): Promise<bigint> {
     await this.delay(400)
+
+    if (token !== ETH_ADDRESS) {
+      const balance = this.getOrCreateErc20Balance(player, token)
+      if (balance < amount) throw new Error('Insufficient token balance')
+
+      const allowances = this.getOrCreateTokenMap(this.erc20Allowances, player)
+      const tokenKey = token.toLowerCase()
+      const allowance = allowances.get(tokenKey) ?? 0n
+      if (allowance < amount) throw new Error('Insufficient allowance. Please approve token first.')
+
+      this.setErc20Balance(player, token, balance - amount)
+      allowances.set(tokenKey, allowance - amount)
+    }
 
     const requestId = this.nextRequestId++
     const bet: PokerBet = {
@@ -190,9 +254,20 @@ class MockContractClient {
     if (!rewards || rewards.size === 0) throw new Error('No rewards to claim')
 
     for (const [token, amount] of rewards.entries()) {
+      if ((token as Address) !== ETH_ADDRESS) {
+        const balance = this.getOrCreateErc20Balance(player, token as Address)
+        this.setErc20Balance(player, token as Address, balance + amount)
+      }
       this.emit('ReferralRewardPaid', { player, token, amount })
     }
     this.referralRewards.delete(key)
+  }
+
+  async approveToken(player: Address, token: Address, amount: bigint): Promise<void> {
+    await this.delay(300)
+    if (token === ETH_ADDRESS) return
+    const allowances = this.getOrCreateTokenMap(this.erc20Allowances, player)
+    allowances.set(token.toLowerCase(), amount)
   }
 
   // ============ Private ============
@@ -207,6 +282,11 @@ class MockContractClient {
     const payout = win
       ? (bet.amount * BigInt(bet.multiplier) * 98n) / 100n
       : 0n
+
+    if (payout > 0n && bet.token !== ETH_ADDRESS) {
+      const balance = this.getOrCreateErc20Balance(bet.player, bet.token)
+      this.setErc20Balance(bet.player, bet.token, balance + payout)
+    }
 
     Object.assign(bet, { settled: true, result, payout, win })
     this.emit('DiceBetSettled', { requestId, result, payout, win })
@@ -233,6 +313,11 @@ class MockContractClient {
     } else {
       result = 'tie'
       payout = bet.amount
+    }
+
+    if (payout > 0n && bet.token !== ETH_ADDRESS) {
+      const balance = this.getOrCreateErc20Balance(bet.player, bet.token)
+      this.setErc20Balance(bet.player, bet.token, balance + payout)
     }
 
     Object.assign(bet, { settled: true, playerCards, dealerCards, playerHandRank, dealerHandRank, payout, result })

@@ -1,6 +1,9 @@
 import { Card } from '@/components/common/Card'
 import { formatEth, formatTimestamp, cn } from '@/utils/format'
 import type { DiceBet, PokerBet } from '@/contracts/types'
+import type { Address } from 'viem'
+import { useGameStore } from '@/stores/gameStore'
+import { ETH_ADDRESS } from '@/contracts/types'
 
 interface BetHistoryProps {
   diceBets: DiceBet[]
@@ -10,6 +13,7 @@ interface BetHistoryProps {
 
 type AnyBet = {
   requestId: bigint
+  token: Address
   amount: bigint
   timestamp: number
   settled: boolean
@@ -20,11 +24,13 @@ type AnyBet = {
 }
 
 export function BetHistory({ diceBets, pokerBets, filter = 'all' }: BetHistoryProps) {
+  const tokenInfo = useGameStore(state => state.tokenInfo)
   const allBets: AnyBet[] = []
 
   if (filter !== 'poker') {
     diceBets.forEach(b => allBets.push({
       requestId: b.requestId,
+      token: b.token,
       amount: b.amount,
       timestamp: b.timestamp,
       settled: b.settled,
@@ -38,6 +44,7 @@ export function BetHistory({ diceBets, pokerBets, filter = 'all' }: BetHistoryPr
   if (filter !== 'dice') {
     pokerBets.forEach(b => allBets.push({
       requestId: b.requestId,
+      token: b.token,
       amount: b.amount,
       timestamp: b.timestamp,
       settled: b.settled,
@@ -50,6 +57,7 @@ export function BetHistory({ diceBets, pokerBets, filter = 'all' }: BetHistoryPr
 
   allBets.sort((a, b) => b.timestamp - a.timestamp)
   const displayBets = allBets.slice(0, 15)
+  const getTokenSymbol = (token: Address) => tokenInfo.get(token)?.symbol ?? (token === ETH_ADDRESS ? 'ETH' : 'TOKEN')
 
   if (displayBets.length === 0) {
     return (
@@ -85,7 +93,7 @@ export function BetHistory({ diceBets, pokerBets, filter = 'all' }: BetHistoryPr
                     {bet.type === 'dice' ? 'Dice' : 'Poker'}
                   </span>
                 </td>
-                <td className="py-2 px-2 text-right font-mono">{formatEth(bet.amount)}</td>
+                <td className="py-2 px-2 text-right font-mono">{formatEth(bet.amount)} {getTokenSymbol(bet.token)}</td>
                 <td className="py-2 px-2 text-gray-300">{bet.detail}</td>
                 <td className="py-2 px-2 text-center">
                   {bet.outcome === 'pending' ? (
@@ -99,7 +107,7 @@ export function BetHistory({ diceBets, pokerBets, filter = 'all' }: BetHistoryPr
                   )}
                 </td>
                 <td className="py-2 px-2 text-right font-mono">
-                  {bet.settled ? formatEth(bet.payout ?? 0n) : '-'}
+                  {bet.settled ? `${formatEth(bet.payout ?? 0n)} ${getTokenSymbol(bet.token)}` : '-'}
                 </td>
               </tr>
             ))}
