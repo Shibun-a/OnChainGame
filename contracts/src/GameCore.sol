@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import "@chainlink/contracts/src/v0.8/vrf/dev/VRFConsumerBaseV2Plus.sol";
 import "@chainlink/contracts/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+// Ownable-like access is provided by VRF's ConfirmedOwner via VRFConsumerBaseV2Plus
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
@@ -115,6 +116,7 @@ contract GameCore is VRFConsumerBaseV2Plus, ERC721, ReentrancyGuard {
         maxBet = _maxBet;
     }
 
+
     // ============ View Functions ============
 
     function getGameConfig() external view returns (uint256, uint256, uint256, uint256) {
@@ -135,6 +137,7 @@ contract GameCore is VRFConsumerBaseV2Plus, ERC721, ReentrancyGuard {
         }
         return ("MOCK", 18, isTokenSupported[token]);
     }
+
 
     function getDiceResult(uint256 requestId) external view returns (uint8 result, uint256 payout, bool win) {
         DiceBet memory bet = diceBets[requestId];
@@ -183,9 +186,13 @@ contract GameCore is VRFConsumerBaseV2Plus, ERC721, ReentrancyGuard {
             require(IERC20(token).transferFrom(msg.sender, address(this), amount), "Transfer failed");
         }
 
-        // Check reward pool
+        // Check reward pool by token
         uint256 maxPayout = (amount * multiplier * (10000 - houseEdgeBps)) / 10000;
-        require(rewardPool >= maxPayout, "Reward pool insufficient");
+        if (token == address(0)) {
+            require(rewardPool >= maxPayout, "Reward pool insufficient");
+        } else {
+            require(IERC20(token).balanceOf(address(this)) >= maxPayout, "Reward pool insufficient");
+        }
 
         // Request VRF
         requestId = s_vrfCoordinator.requestRandomWords(
@@ -248,7 +255,11 @@ contract GameCore is VRFConsumerBaseV2Plus, ERC721, ReentrancyGuard {
         }
 
         uint256 maxPayout = (amount * 2 * (10000 - houseEdgeBps)) / 10000;
-        require(rewardPool >= maxPayout, "Reward pool insufficient");
+        if (token == address(0)) {
+            require(rewardPool >= maxPayout, "Reward pool insufficient");
+        } else {
+            require(IERC20(token).balanceOf(address(this)) >= maxPayout, "Reward pool insufficient");
+        }
 
         requestId = s_vrfCoordinator.requestRandomWords(
             VRFV2PlusClient.RandomWordsRequest({
@@ -313,7 +324,9 @@ contract GameCore is VRFConsumerBaseV2Plus, ERC721, ReentrancyGuard {
         if (win) {
             uint256 payout = (bet.amount * bet.multiplier * (10000 - houseEdgeBps)) / 10000;
             bet.payout = payout;
-            rewardPool -= payout;
+            if (bet.token == address(0)) {
+                rewardPool -= payout;
+            }
             playerWins[bet.player]++;
             playerTotalPayout[bet.player] += payout;
 
@@ -366,7 +379,9 @@ contract GameCore is VRFConsumerBaseV2Plus, ERC721, ReentrancyGuard {
         if (win) {
             uint256 payout = (bet.amount * 2 * (10000 - houseEdgeBps)) / 10000;
             bet.payout = payout;
-            rewardPool -= payout;
+            if (bet.token == address(0)) {
+                rewardPool -= payout;
+            }
             playerWins[bet.player]++;
             playerTotalPayout[bet.player] += payout;
         } else if (tie) {

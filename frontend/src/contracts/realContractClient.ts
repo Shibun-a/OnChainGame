@@ -1,6 +1,7 @@
 import { type Address, type WalletClient, parseAbiItem, decodeEventLog } from 'viem'
 import { publicClient, getWalletClient } from './clients'
 import { GAME_CORE_ADDRESS } from './addresses'
+import { MOCK_ERC20_ADDRESS } from './addresses'
 import GameCoreABI from './abi/GameCore.json'
 import type { 
   GameConfig, 
@@ -16,6 +17,57 @@ const ContractABI = GameCoreABI.abi as any
 class RealContractClient {
   private async getWallet(): Promise<WalletClient> {
     return getWalletClient()
+  }
+
+  private ERC20_ABI = [
+    {
+      type: 'function',
+      name: 'allowance',
+      stateMutability: 'view',
+      inputs: [
+        { name: 'owner', type: 'address' },
+        { name: 'spender', type: 'address' },
+      ],
+      outputs: [{ type: 'uint256' }],
+    },
+    {
+      type: 'function',
+      name: 'approve',
+      stateMutability: 'nonpayable',
+      inputs: [
+        { name: 'spender', type: 'address' },
+        { name: 'value', type: 'uint256' },
+      ],
+      outputs: [{ type: 'bool' }],
+    },
+    {
+      type: 'function',
+      name: 'balanceOf',
+      stateMutability: 'view',
+      inputs: [{ name: 'account', type: 'address' }],
+      outputs: [{ type: 'uint256' }],
+    },
+  ] as const
+
+  private async ensureERC20Approval(token: Address, owner: Address, amount: bigint): Promise<void> {
+    const allowance = await publicClient.readContract({
+      address: token,
+      abi: this.ERC20_ABI as any,
+      functionName: 'allowance',
+      args: [owner, GAME_CORE_ADDRESS],
+    }) as bigint
+    if (allowance < amount) {
+      const wallet = await this.getWallet()
+      const tx = await wallet.writeContract({
+        address: token,
+        abi: this.ERC20_ABI as any,
+        functionName: 'approve',
+        args: [GAME_CORE_ADDRESS, amount],
+        account: owner,
+        chain: null,
+      })
+      await publicClient.waitForTransactionReceipt({ hash: tx })
+    }
   }
 
   // ============ Read Methods ============
@@ -369,6 +421,10 @@ class RealContractClient {
     const wallet = await this.getWallet()
     const isEth = token === '0x0000000000000000000000000000000000000000'
 
+    if (!isEth) {
+      await this.ensureERC20Approval(token, player, amount)
+    }
+
     const hash = await wallet.writeContract({
       address: GAME_CORE_ADDRESS,
       abi: ContractABI,
@@ -406,6 +462,10 @@ class RealContractClient {
     const wallet = await this.getWallet()
     const isEth = token === '0x0000000000000000000000000000000000000000'
 
+    if (!isEth) {
+      await this.ensureERC20Approval(token, player, amount)
+    }
+
     const hash = await wallet.writeContract({
       address: GAME_CORE_ADDRESS,
       abi: ContractABI,
@@ -435,6 +495,28 @@ class RealContractClient {
       }
     }
     throw new Error('Failed to retrieve request ID')
+  }
+
+  async mintTestToken(player: Address, _amount: bigint): Promise<void> {
+    const wallet = await this.getWallet()
+    const ERC20_ABI = [
+      {
+        type: 'function',
+        name: 'claim',
+        stateMutability: 'nonpayable',
+        inputs: [],
+        outputs: [],
+      },
+    ] as const
+    const hash = await wallet.writeContract({
+      address: MOCK_ERC20_ADDRESS,
+      abi: ERC20_ABI as any,
+      functionName: 'claim',
+      args: [],
+      account: player,
+      chain: null,
+    })
+    await publicClient.waitForTransactionReceipt({ hash })
   }
 
   async setReferrer(player: Address, referrer: Address): Promise<void> {

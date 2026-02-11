@@ -1,6 +1,8 @@
 import { Card } from '@/components/common/Card'
 import { formatEth, formatTimestamp, cn } from '@/utils/format'
 import type { DiceBet, PokerBet } from '@/contracts/types'
+import { useGameStore } from '@/stores/gameStore'
+import { ETH_ADDRESS } from '@/contracts/types'
 
 interface BetHistoryProps {
   diceBets: DiceBet[]
@@ -22,6 +24,7 @@ type AnyBet = {
 
 export function BetHistory({ diceBets, pokerBets, filter = 'all' }: BetHistoryProps) {
   const allBets: AnyBet[] = []
+  const { tokenInfo } = useGameStore()
 
   if (filter !== 'poker') {
     diceBets.forEach(b => allBets.push({
@@ -33,7 +36,7 @@ export function BetHistory({ diceBets, pokerBets, filter = 'all' }: BetHistoryPr
       win: b.win,
       result: b.win ? 'win' : 'loss',
       type: 'dice',
-      detail: `${b.multiplier}x | Roll: ${b.result ?? '...'}`,
+      detail: `${b.multiplier}x | Roll: ${b.result ?? '...'} | ${b.token === ETH_ADDRESS ? 'ETH' : (tokenInfo.get(b.token)?.symbol || 'TOKEN')}`,
     }))
   }
 
@@ -47,7 +50,7 @@ export function BetHistory({ diceBets, pokerBets, filter = 'all' }: BetHistoryPr
       win: b.result === 'win',
       result: b.result,
       type: 'poker',
-      detail: b.settled ? (b.result === 'tie' ? 'Tie (Refund)' : b.result ?? 'pending') : 'pending',
+      detail: `${b.settled ? (b.result === 'tie' ? 'Tie (Refund)' : b.result ?? 'pending') : 'pending'} | ${b.token === ETH_ADDRESS ? 'ETH' : (tokenInfo.get(b.token)?.symbol || 'TOKEN')}`,
     }))
   }
 
@@ -88,7 +91,9 @@ export function BetHistory({ diceBets, pokerBets, filter = 'all' }: BetHistoryPr
                     {bet.type === 'dice' ? 'Dice' : 'Poker'}
                   </span>
                 </td>
-                <td className="py-2 px-2 text-right font-mono">{formatEth(bet.amount)}</td>
+                <td className="py-2 px-2 text-right font-mono">
+                  {formatEth(bet.amount)} {bet.detail.split('|').pop()?.trim()}
+                </td>
                 <td className="py-2 px-2 text-gray-300">{bet.detail}</td>
                 <td className="py-2 px-2 text-center">
                   {!bet.settled ? (
@@ -102,7 +107,7 @@ export function BetHistory({ diceBets, pokerBets, filter = 'all' }: BetHistoryPr
                   )}
                 </td>
                 <td className="py-2 px-2 text-right font-mono">
-                  {bet.settled ? formatEth(bet.payout ?? 0n) : '-'}
+                  {bet.settled ? `${formatEth(bet.payout ?? 0n)} ${bet.detail.split('|').pop()?.trim()}` : '-'}
                 </td>
               </tr>
             ))}

@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
+import type { Address } from 'viem'
 import { parseEther } from 'viem'
 import { useWallet } from '@/hooks/useWallet'
 import { useGameStore } from '@/stores/gameStore'
@@ -8,6 +9,8 @@ import { BetSummary } from './BetSummary'
 import { toast } from '@/components/common/Toast'
 import { formatEth, cn } from '@/utils/format'
 import { DICE_MULTIPLIERS, ETH_ADDRESS } from '@/contracts/types'
+import { GAME_CORE_ADDRESS } from '@/contracts/addresses'
+import { publicClient } from '@/contracts/clients'
 
 interface BetFormProps {
   gameType: 'dice' | 'poker'
@@ -16,9 +19,12 @@ interface BetFormProps {
 
 export function BetForm({ gameType, onBetPlaced }: BetFormProps) {
   const { address, isConnected, ethBalance } = useWallet()
-  const { config, isPlacingBet, placeDiceBet, placePokerBet } = useGameStore()
+  const { config, isPlacingBet, placeDiceBet, placePokerBet, supportedTokens, tokenInfo, loadSupportedTokens } = useGameStore()
   const [amount, setAmount] = useState('')
   const [multiplier, setMultiplier] = useState(2)
+  const [selectedToken, setSelectedToken] = useState<Address>(ETH_ADDRESS)
+  const [selectedBalance, setSelectedBalance] = useState<bigint>(0n)
+  const [contractPool, setContractPool] = useState<bigint>(0n)
 
   const amountBigInt = useMemo(() => {
     try {
@@ -29,19 +35,91 @@ export function BetForm({ gameType, onBetPlaced }: BetFormProps) {
     }
   }, [amount])
 
+  useEffect(() => {
+    if (supportedTokens.length === 0) {
+      loadSupportedTokens()
+    }
+  }, [supportedTokens.length, loadSupportedTokens])
+
+  useEffect(() => {
+    if (!address) {
+      setSelectedBalance(0n)
+      return
+    }
+    if (selectedToken === ETH_ADDRESS) {
+      setSelectedBalance(ethBalance)
+      return
+    }
+    const ERC20_ABI = [
+      {
+        type: 'function',
+        name: 'balanceOf',
+        stateMutability: 'view',
+        inputs: [{ name: 'account', type: 'address' }],
+        outputs: [{ type: 'uint256' }],
+      },
+    ] as const
+    ;(async () => {
+      try {
+        const bal = await publicClient.readContract({
+          address: selectedToken,
+          abi: ERC20_ABI as any,
+          functionName: 'balanceOf',
+          args: [address],
+        }) as bigint
+        setSelectedBalance(bal)
+      } catch {
+        setSelectedBalance(0n)
+      }
+    })()
+  }, [address, selectedToken, ethBalance])
+
+  useEffect(() => {
+    if (!config) {
+      setContractPool(0n)
+      return
+    }
+    if (selectedToken === ETH_ADDRESS) {
+      setContractPool(config.rewardPool)
+      return
+    }
+    const ERC20_ABI = [
+      {
+        type: 'function',
+        name: 'balanceOf',
+        stateMutability: 'view',
+        inputs: [{ name: 'account', type: 'address' }],
+        outputs: [{ type: 'uint256' }],
+      },
+    ] as const
+    ;(async () => {
+      try {
+        const bal = await publicClient.readContract({
+          address: selectedToken,
+          abi: ERC20_ABI as any,
+          functionName: 'balanceOf',
+          args: [GAME_CORE_ADDRESS],
+        }) as bigint
+        setContractPool(bal)
+      } catch {
+        setContractPool(0n)
+      }
+    })()
+  }, [config, selectedToken])
+
   const validation = useMemo(() => {
     if (!config) return { valid: false, error: 'Loading...' }
     if (!amount || amountBigInt === 0n) return { valid: false, error: '' }
     if (amountBigInt < config.minBet) return { valid: false, error: `Min bet: ${formatEth(config.minBet)} ETH` }
     if (amountBigInt > config.maxBet) return { valid: false, error: `Max bet: ${formatEth(config.maxBet)} ETH` }
-    if (amountBigInt > ethBalance) return { valid: false, error: 'Insufficient balance' }
+    if (amountBigInt > selectedBalance) return { valid: false, error: 'Insufficient balance' }
 
     const mult = gameType === 'dice' ? multiplier : 2
     const maxPayout = (amountBigInt * BigInt(mult) * BigInt(10000 - config.houseEdgeBps)) / 10000n
-    if (maxPayout > config.rewardPool) return { valid: false, error: 'Reward pool insufficient' }
+    if (maxPayout > contractPool) return { valid: false, error: 'Reward pool insufficient' }
 
     return { valid: true, error: '' }
-  }, [config, amount, amountBigInt, ethBalance, multiplier, gameType])
+  }, [config, amount, amountBigInt, selectedBalance, multiplier, gameType, contractPool])
 
   const handleSubmit = async () => {
     if (!address || !validation.valid) return
@@ -51,9 +129,9 @@ export function BetForm({ gameType, onBetPlaced }: BetFormProps) {
       let requestId: bigint
 
       if (gameType === 'dice') {
-        requestId = await placeDiceBet(address, chosenNumber, multiplier, ETH_ADDRESS, amountBigInt)
+        requestId = await placeDiceBet(address, chosenNumber, multiplier, selectedToken, amountBigInt)
       } else {
-        requestId = await placePokerBet(address, ETH_ADDRESS, amountBigInt)
+        requestId = await placePokerBet(address, selectedToken, amountBigInt)
       }
 
       toast('Bet placed! Waiting for result...', 'info')
@@ -79,12 +157,23 @@ export function BetForm({ gameType, onBetPlaced }: BetFormProps) {
           {gameType === 'dice' ? 'Place Dice Bet' : 'Place Poker Bet'}
         </h3>
 
-        {/* Token display (ETH only for now) */}
         <div className="mb-4">
           <label className="text-sm text-gray-400 mb-1 block">Token</label>
-          <div className="bg-gray-700 rounded-lg px-4 py-2.5 flex items-center justify-between">
-            <span className="font-medium">ETH</span>
-            <span className="text-sm text-gray-400">Balance: {formatEth(ethBalance)}</span>
+          <div className="bg-gray-700 rounded-lg px-4 py-2.5 flex items-center justify-between gap-3">
+            <select
+              value={selectedToken}
+              onChange={e => setSelectedToken(e.target.value as Address)}
+              className="bg-gray-800 rounded px-3 py-2 text-white outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {supportedTokens.map(t => {
+                const info = tokenInfo.get(t)
+                const label = info ? info.symbol : t.slice(0,6) + '...' + t.slice(-4)
+                return (
+                  <option key={t} value={t}>{label}</option>
+                )
+              })}
+            </select>
+            <span className="text-sm text-gray-400">Balance: {formatEth(selectedBalance)}</span>
           </div>
         </div>
 
@@ -103,8 +192,8 @@ export function BetForm({ gameType, onBetPlaced }: BetFormProps) {
             />
             <button
               onClick={() => {
-                if (config && ethBalance > 0n) {
-                  const max = ethBalance < config.maxBet ? ethBalance : config.maxBet
+                if (config && selectedBalance > 0n) {
+                  const max = selectedBalance < config.maxBet ? selectedBalance : config.maxBet
                   setAmount(formatEth(max))
                 }
               }}
@@ -170,6 +259,7 @@ export function BetForm({ gameType, onBetPlaced }: BetFormProps) {
           multiplier={multiplier}
           gameType={gameType}
           config={config}
+          tokenSymbol={selectedToken === ETH_ADDRESS ? 'ETH' : (tokenInfo.get(selectedToken)?.symbol || 'TOKEN')}
         />
       )}
     </div>

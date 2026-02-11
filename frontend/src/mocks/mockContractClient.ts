@@ -146,6 +146,11 @@ class MockContractClient {
     }))
   }
 
+  async mintTestToken(_player: Address, _amount: bigint): Promise<void> {
+    // No-op in mock mode. Frontend uses publicClient to read balances.
+    return
+  }
+
   async getReferrer(player: Address): Promise<Address | null> {
     await this.delay(50)
     return this.referrers.get(player.toLowerCase()) ?? null
