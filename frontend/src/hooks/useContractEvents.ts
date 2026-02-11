@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useGameStore } from '@/stores/gameStore'
 import { useAchievementStore } from '@/stores/achievementStore'
+import { useWalletStore } from '@/stores/walletStore'
 import { publicClient } from '@/contracts/clients'
 import { GAME_CORE_ADDRESS, USE_MOCK_CONTRACTS } from '@/contracts/addresses'
 import GameCoreABI from '@/contracts/abi/GameCore.json'
@@ -24,7 +25,8 @@ export function useContractEvents() {
     }
 
     const handleMockAchievement = (e: Event) => {
-      const { achievementId, tokenId } = (e as CustomEvent).detail
+      const { player, achievementId, tokenId } = (e as CustomEvent<{ player?: string; achievementId: number; tokenId: bigint | number | string }>).detail
+      if (!address || !player || player.toLowerCase() !== address.toLowerCase()) return
       markEarned(achievementId, BigInt(tokenId))
     }
 
@@ -75,7 +77,7 @@ export function useContractEvents() {
         unwatchPoker()
       }
     }
-  }, [updateDiceResult, updatePokerResult, markEarned])
+  }, [address, updateDiceResult, updatePokerResult, markEarned])
 
   // 2. Active Polling Fallback (For when events are missed or delayed)
   // Polls every 2 seconds if there are pending requests

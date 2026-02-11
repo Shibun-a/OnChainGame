@@ -18,8 +18,7 @@ type AnyBet = {
   timestamp: number
   settled: boolean
   payout?: bigint
-  win?: boolean
-  result?: 'win' | 'loss' | 'tie'
+  outcome: 'pending' | 'win' | 'loss' | 'tie'
   type: 'dice' | 'poker'
   detail: string
 }
@@ -36,8 +35,7 @@ export function BetHistory({ diceBets, pokerBets, filter = 'all' }: BetHistoryPr
       timestamp: b.timestamp,
       settled: b.settled,
       payout: b.payout,
-      win: b.win,
-      result: b.win ? 'win' : 'loss',
+      outcome: !b.settled ? 'pending' : b.win ? 'win' : 'loss',
       type: 'dice',
       detail: `${b.multiplier}x | Roll: ${b.result ?? '...'}`,
     }))
@@ -51,10 +49,9 @@ export function BetHistory({ diceBets, pokerBets, filter = 'all' }: BetHistoryPr
       timestamp: b.timestamp,
       settled: b.settled,
       payout: b.payout,
-      win: b.result === 'win',
-      result: b.result,
+      outcome: !b.settled ? 'pending' : b.result === 'tie' ? 'tie' : b.result === 'win' ? 'win' : 'loss',
       type: 'poker',
-      detail: b.settled ? (b.result === 'tie' ? 'Tie (Refund)' : b.result ?? 'pending') : 'pending',
+      detail: b.settled ? (b.result ?? 'pending') : 'pending',
     }))
   }
 
@@ -101,10 +98,10 @@ export function BetHistory({ diceBets, pokerBets, filter = 'all' }: BetHistoryPr
                 <td className="py-2 px-2 text-center">
                   {bet.outcome === 'pending' ? (
                     <span className="text-yellow-400 text-xs">Pending</span>
-                  ) : bet.result === 'win' ? (
+                  ) : bet.outcome === 'win' ? (
                     <span className="text-green-400 text-xs font-semibold">Win</span>
-                  ) : bet.result === 'tie' ? (
-                    <span className="text-gray-400 text-xs font-semibold">Tie</span>
+                  ) : bet.outcome === 'tie' ? (
+                    <span className="text-yellow-300 text-xs font-semibold">Tie</span>
                   ) : (
                     <span className="text-red-400 text-xs">Loss</span>
                   )}
