@@ -5,8 +5,8 @@ A decentralized gaming platform deployed on Ethereum Sepolia testnet, featuring 
 ## Features
 
 - **Dice Game** — Choose a multiplier (2x/5x/10x) and roll. Higher multipliers = bigger payouts but lower win chance.
-- **Simplified Poker** — 3-card poker against a dealer. Three of a Kind > Pair > High Card.
-- **Chainlink VRF v2** — Provably fair on-chain randomness for every game result.
+- **3-Card Poker** — Classic 3-card poker against a dealer. Straight Flush > 3-of-a-Kind > Straight > Flush > Pair > High Card.
+- **Chainlink VRF v2.5** — Provably fair on-chain randomness for every game result (supports Native ETH payment).
 - **NFT Achievements** — ERC-721 tokens auto-minted on first dice/poker participation.
 - **Referral System** — 1% commission on referred users' bets, claimable on-chain.
 - **ENS Integration** — Player ENS names resolved from mainnet and displayed across the platform.
@@ -18,11 +18,12 @@ A decentralized gaming platform deployed on Ethereum Sepolia testnet, featuring 
 ├── README.md                   Comprehensive overview (this file)
 ├── ONCHAIN_GAME_DEV.md         Original specification & ABI reference
 ├── IMPLEMENTATION_PLAN.md      Detailed implementation plan
-├── contracts/                  Solidity smart contracts
+├── contracts/                  Solidity smart contracts (Foundry project)
 │   ├── src/
 │   │   ├── GameCore.sol        Main game contract (VRF, NFT, referral)
 │   │   └── MockERC20.sol       Test ERC-20 token
-│   └── test/                   Contract test cases
+│   ├── script/                 Deployment and interaction scripts
+│   └── test/                   Foundry test cases
 ├── frontend/                   React + Vite + TypeScript application
 │   ├── src/
 │   │   ├── app/                App entry, routing, layout
@@ -52,25 +53,27 @@ A decentralized gaming platform deployed on Ethereum Sepolia testnet, featuring 
 | Blockchain Library | viem |
 | State Management | Zustand |
 | Routing | React Router v7 |
-| Smart Contracts | Solidity ^0.8.20, OpenZeppelin, Chainlink VRF v2 |
+| Smart Contracts | Solidity ^0.8.20, OpenZeppelin, Chainlink VRF v2.5 |
 | Network | Ethereum Sepolia Testnet |
-| Contract IDE | Remix |
+| Development Framework | Foundry |
 
 ## Quick Start
 
 ### Prerequisites
 
 - Node.js >= 18
+- [Foundry](https://book.getfoundry.sh/getting-started/installation) (for contract development)
 - MetaMask browser extension
 - Sepolia ETH from [faucet](https://sepoliafaucet.com)
 
-### Run Frontend (Mock Mode)
+### Run Frontend (Dev Mode)
 
 ```bash
 # Install dependencies
-npm run install:frontend
+cd frontend
+npm install
 
-# Start dev server (uses mock contracts, no MetaMask needed)
+# Start dev server
 npm run dev
 # → http://localhost:5173
 ```
@@ -78,23 +81,49 @@ npm run dev
 ### Build for Production
 
 ```bash
+cd frontend
 npm run build
 ```
 
-### Deploy Contracts (Remix)
+### Deploy Contracts (Foundry)
 
-1. Open [Remix IDE](https://remix.ethereum.org)
-2. Copy `contracts/src/GameCore.sol` and `contracts/src/MockERC20.sol`
-3. Compile with Solidity ^0.8.20
-4. Deploy MockERC20 first
-5. Deploy GameCore with constructor args:
-   - `vrfCoordinator`: `0x8103B0A8A00be2DDC778e6e7eaa21791Cd364625`
-   - `subscriptionId`: Your VRF subscription ID from [vrf.chain.link](https://vrf.chain.link)
-   - `keyHash`: `0x474e34a077df58807dbe9c96d3c009b23b3c6d0cce433e59bbf5b34f823bc56c`
-6. Add GameCore as VRF consumer in your subscription
-7. Fund reward pool: `fundRewardPool{value: 10 ether}()`
-8. Add MockERC20: `addSupportedToken(mockERC20Address)`
-9. Update `frontend/src/contracts/addresses.ts` with deployed addresses
+1. **Install Dependencies**:
+   ```bash
+   cd contracts
+   forge install
+   ```
+
+2. **Configure Environment**:
+   Copy `.env.example` to `.env` and fill in the values:
+   ```env
+   PRIVATE_KEY=your_private_key
+   ETH_RPC_URL=https://ethereum-sepolia.publicnode.com
+   VRF_SUBSCRIPTION_ID=your_sub_id
+   ...
+   ```
+
+3. **Deploy GameCore**:
+   ```bash
+   # Load environment variables
+   # (Foundry automatically loads .env files, compatible with Windows/Linux/Mac)
+   # Linux/Mac users can optionally run 'source .env' first.
+   forge script script/DeployGameCore.s.sol:DeployGameCore --broadcast
+   ```
+   *Copy the deployed GameCore address from the output.*
+
+4. **Fund Reward Pool**:
+   - Add the new address to `.env`:
+     ```env
+     GAME_CORE_ADDRESS=0x...
+     ```
+   - Run the funding script:
+     ```bash
+     forge script script/FundRewardPool.s.sol:FundRewardPool --broadcast
+     ```
+
+5. **Post-Deployment**:
+   - Add the deployed GameCore address as a **Consumer** in your Chainlink VRF Subscription.
+   - Update `frontend/src/contracts/addresses.ts` with the new address.
 
 ## Game Mechanics
 
@@ -106,18 +135,23 @@ npm run build
 | 5x | Roll > 80 | 20% | 4.90x |
 | 10x | Roll > 90 | 10% | 9.80x |
 
-### Simplified Poker
+### 3-Card Poker
 
-- 3 cards dealt to player and dealer via Chainlink VRF
-- Hand ranking: Three of a Kind > Pair > High Card
-- Win = 2x payout (1.96x after house edge), Tie = full refund
+- 3 cards dealt to player and dealer via Chainlink VRF.
+- **Hand Ranking**: Straight Flush > Three of a Kind > Straight > Flush > Pair > High Card.
+- **Tie Breaker**:
+  - Pair vs Pair: Compare pair rank first, then kicker.
+  - High Card vs High Card: Compare High, then Mid, then Low card.
+- **Payouts**:
+  - Win: 2x payout (1.96x after house edge).
+  - Tie: Full refund.
 
 ## Contract Addresses (Sepolia)
 
 | Contract | Address |
 |----------|---------|
-| GameCore | `TBD` — deploy and update |
-| MockERC20 | `TBD` — deploy and update |
+| GameCore | `0x91acbb64811665ed40114c21292FAEA48602705E` |
+| MockERC20 | *Optional / TBD* |
 | VRF Coordinator | `0x8103B0A8A00be2DDC778e6e7eaa21791Cd364625` |
 
 ## License

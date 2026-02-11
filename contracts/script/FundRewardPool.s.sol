@@ -7,7 +7,7 @@ import "../src/GameCore.sol";
 contract FundRewardPool is Script {
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address gameCoreAddress = 0x91acbb64811665ed40114c21292FAEA48602705E;
+        address gameCoreAddress = vm.envAddress("GAME_CORE_ADDRESS");
 
         vm.startBroadcast(deployerPrivateKey);
 
