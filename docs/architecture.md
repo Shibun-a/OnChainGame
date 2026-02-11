@@ -5,24 +5,24 @@
 The platform follows a **frontend-first, contract-decoupled** architecture where the React frontend communicates directly with Ethereum smart contracts via viem. No backend server is required — all game logic, randomness, and settlements happen on-chain.
 
 ```
-┌─────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────┐
 │                   User Browser                   │
-│                                                 │
-│  ┌──────────┐  ┌──────────┐  ┌──────────────┐  │
+│                                                  │
+│  ┌──────────┐  ┌───────────┐  ┌───────────────┐  │
 │  │  React   │  │  Zustand  │  │  viem Client  │  │
 │  │  Pages   │──│  Stores   │──│  (read/write) │  │
-│  └──────────┘  └──────────┘  └──────┬───────┘  │
-│                                      │          │
-│  ┌──────────────────────────────────┐│          │
-│  │  MetaMask (window.ethereum)      ││          │
-│  └──────────────────────────────────┘│          │
-└──────────────────────────────────────┼──────────┘
+│  └──────────┘  └───────────┘  └──────┬────────┘  │
+│                                      │           │
+│  ┌──────────────────────────────────┐│           │
+│  │  MetaMask (window.ethereum)      ││           │
+│  └──────────────────────────────────┘│           │
+└──────────────────────────────────────┼───────────┘
                                        │
               ┌────────────────────────┼──────────┐
               │      Sepolia Testnet   │          │
               │                        ▼          │
               │  ┌─────────────────────────────┐  │
-              │  │       GameCore.sol           │  │
+              │  │       GameCore.sol          │  │
               │  │  ┌───────┐ ┌──────────────┐ │  │
               │  │  │ Dice  │ │   Poker      │ │  │
               │  │  └───┬───┘ └──────┬───────┘ │  │
@@ -37,10 +37,10 @@ The platform follows a **frontend-first, contract-decoupled** architecture where
               │  │  └────────────┘ └─────────┘ │  │
               │  └─────────────────────────────┘  │
               │                                   │
-              │  ┌──────────────┐                  │
-              │  │ Ethereum     │ (ENS resolve)    │
-              │  │ Mainnet      │                  │
-              │  └──────────────┘                  │
+              │  ┌──────────────┐                 │
+              │  │ Ethereum     │ (ENS resolve)   │
+              │  │ Mainnet      │                 │
+              │  └──────────────┘                 │
               └───────────────────────────────────┘
 ```
 
