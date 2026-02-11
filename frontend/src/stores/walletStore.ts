@@ -9,6 +9,8 @@ interface WalletState {
   isConnecting: boolean
   ethBalance: bigint
   erc20Balances: Map<Address, bigint>
+  accountsChangedHandler: ((accs: unknown) => void) | null
+  chainChangedHandler: ((cId: unknown) => void) | null
 
   connect: () => Promise<void>
   disconnect: () => void
@@ -23,6 +25,8 @@ export const useWalletStore = create<WalletState>((set, get) => ({
   isConnecting: false,
   ethBalance: 0n,
   erc20Balances: new Map(),
+  accountsChangedHandler: null,
+  chainChangedHandler: null,
 
   connect: async () => {
     if (!window.ethereum) throw new Error('No wallet detected. Please install MetaMask.')
@@ -39,8 +43,15 @@ export const useWalletStore = create<WalletState>((set, get) => ({
       set({ address, chainId, isConnected: true, isConnecting: false })
       localStorage.setItem('walletConnected', 'true')
 
-      // Listen for changes
-      window.ethereum.on('accountsChanged', (accs: unknown) => {
+      const { accountsChangedHandler, chainChangedHandler } = get()
+      if (accountsChangedHandler) {
+        window.ethereum.removeListener('accountsChanged', accountsChangedHandler)
+      }
+      if (chainChangedHandler) {
+        window.ethereum.removeListener('chainChanged', chainChangedHandler)
+      }
+
+      const handleAccountsChanged = (accs: unknown) => {
         const newAccs = accs as string[]
         if (newAccs.length === 0) {
           get().disconnect()
@@ -48,11 +59,15 @@ export const useWalletStore = create<WalletState>((set, get) => ({
           set({ address: newAccs[0] as Address })
           get().updateBalances()
         }
-      })
+      }
 
-      window.ethereum.on('chainChanged', (cId: unknown) => {
+      const handleChainChanged = (cId: unknown) => {
         set({ chainId: parseInt(cId as string, 16) })
-      })
+      }
+
+      window.ethereum.on('accountsChanged', handleAccountsChanged)
+      window.ethereum.on('chainChanged', handleChainChanged)
+      set({ accountsChangedHandler: handleAccountsChanged, chainChangedHandler: handleChainChanged })
 
       await get().updateBalances()
 
@@ -66,7 +81,25 @@ export const useWalletStore = create<WalletState>((set, get) => ({
   },
 
   disconnect: () => {
-    set({ address: null, chainId: null, isConnected: false, ethBalance: 0n, erc20Balances: new Map() })
+    const { accountsChangedHandler, chainChangedHandler } = get()
+    if (window.ethereum) {
+      if (accountsChangedHandler) {
+        window.ethereum.removeListener('accountsChanged', accountsChangedHandler)
+      }
+      if (chainChangedHandler) {
+        window.ethereum.removeListener('chainChanged', chainChangedHandler)
+      }
+    }
+
+    set({
+      address: null,
+      chainId: null,
+      isConnected: false,
+      ethBalance: 0n,
+      erc20Balances: new Map(),
+      accountsChangedHandler: null,
+      chainChangedHandler: null,
+    })
     localStorage.removeItem('walletConnected')
   },
 
