@@ -93,9 +93,9 @@ export function BetHistory({ diceBets, pokerBets, filter = 'all' }: BetHistoryPr
                 <td className="py-2 px-2 text-center">
                   {!bet.settled ? (
                     <span className="text-yellow-400 text-xs">Pending</span>
-                  ) : (bet.result === 'win' || bet.result === 'Win') ? (
+                  ) : bet.result === 'win' ? (
                     <span className="text-green-400 text-xs font-semibold">Win</span>
-                  ) : (bet.result === 'tie' || bet.result === 'Tie') ? (
+                  ) : bet.result === 'tie' ? (
                     <span className="text-gray-400 text-xs font-semibold">Tie</span>
                   ) : (
                     <span className="text-red-400 text-xs">Loss</span>
