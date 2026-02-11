@@ -1,31 +1,55 @@
-import { type Address, type WalletClient, parseAbiItem, decodeEventLog } from 'viem'
-import { publicClient, getWalletClient } from './clients'
-import { GAME_CORE_ADDRESS } from './addresses'
-import GameCoreABI from './abi/GameCore.json'
-import type { 
-  GameConfig, 
-  TokenInfo, 
-  DiceBet, 
-  PokerBet, 
-  Achievement,
-} from './types'
-import { mockAchievements } from '@/mocks/mockData' // Reuse metadata
+import type { Address } from 'viem'
+import { decodeEventLog } from 'viem'
+import type { GameConfig, DiceBet, PokerBet, TokenInfo, Achievement } from '@/contracts/types'
+import { publicClient, getWalletClient } from '@/contracts/clients'
+import { GAME_CORE_ADDRESS, ETH_ADDRESS } from '@/contracts/addresses'
+import GameCoreABI from '@/contracts/abi/GameCore.json'
+import { mockAchievements } from '@/mocks/mockData'
 
-const ContractABI = GameCoreABI.abi as any
+// Minimal ERC20 ABI for approve / balanceOf / allowance
+const erc20Abi = [
+  {
+    name: 'approve',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'spender', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+    ],
+    outputs: [{ type: 'bool' }],
+  },
+  {
+    name: 'balanceOf',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'account', type: 'address' }],
+    outputs: [{ type: 'uint256' }],
+  },
+  {
+    name: 'allowance',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'owner', type: 'address' },
+      { name: 'spender', type: 'address' },
+    ],
+    outputs: [{ type: 'uint256' }],
+  },
+] as const
+
+// ---------------------------------------------------------------------------
+// RealContractClient – mirrors MockContractClient's public interface
+// ---------------------------------------------------------------------------
 
 class RealContractClient {
-  private async getWallet(): Promise<WalletClient> {
-    return getWalletClient()
-  }
-
-  // ============ Read Methods ============
+  // ======================== Read Methods ========================
 
   async getGameConfig(): Promise<GameConfig> {
-    const data = await publicClient.readContract({
+    const data = (await publicClient.readContract({
       address: GAME_CORE_ADDRESS,
-      abi: ContractABI,
+      abi: GameCoreABI,
       functionName: 'getGameConfig',
-    }) as [bigint, bigint, bigint, bigint]
+    })) as [bigint, bigint, bigint, bigint]
 
     return {
       houseEdgeBps: Number(data[0]),
@@ -36,431 +60,375 @@ class RealContractClient {
   }
 
   async getSupportedTokens(): Promise<Address[]> {
-    return await publicClient.readContract({
+    return (await publicClient.readContract({
       address: GAME_CORE_ADDRESS,
-      abi: ContractABI,
+      abi: GameCoreABI,
       functionName: 'getSupportedTokens',
-    }) as Address[]
+    })) as Address[]
   }
 
   async getTokenInfo(token: Address): Promise<TokenInfo> {
-    const data = await publicClient.readContract({
+    const data = (await publicClient.readContract({
       address: GAME_CORE_ADDRESS,
-      abi: ContractABI,
+      abi: GameCoreABI,
       functionName: 'getTokenInfo',
       args: [token],
-    }) as [string, number, boolean]
+    })) as [string, number, boolean]
 
     return {
       address: token,
       symbol: data[0],
-      decimals: data[1],
-      isNative: data[0] === 'ETH',
+      decimals: Number(data[1]),
+      isNative: token === ETH_ADDRESS,
     }
   }
 
+  async getTokenBalance(player: Address, token: Address): Promise<bigint> {
+    if (token === ETH_ADDRESS) {
+      return publicClient.getBalance({ address: player })
+    }
+    return (await publicClient.readContract({
+      address: token,
+      abi: erc20Abi,
+      functionName: 'balanceOf',
+      args: [player],
+    })) as bigint
+  }
+
+  async getTokenAllowance(player: Address, token: Address): Promise<bigint> {
+    if (token === ETH_ADDRESS) return 0n
+    return (await publicClient.readContract({
+      address: token,
+      abi: erc20Abi,
+      functionName: 'allowance',
+      args: [player, GAME_CORE_ADDRESS],
+    })) as bigint
+  }
+
   async getDiceResult(requestId: bigint): Promise<DiceBet | null> {
-    try {
-      // 1. Get static bet info from public mapping
-      const betData = await publicClient.readContract({
-        address: GAME_CORE_ADDRESS,
-        abi: ContractABI,
-        functionName: 'diceBets',
-        args: [requestId],
-      }) as [Address, bigint, Address, number, number, boolean, number, bigint]
+    const data = (await publicClient.readContract({
+      address: GAME_CORE_ADDRESS,
+      abi: GameCoreABI,
+      functionName: 'getDiceResult',
+      args: [requestId],
+    })) as [number, bigint, boolean]
 
-      // Struct: player, amount, token, chosenNumber, multiplier, settled, result, payout
-      if (betData[0] === '0x0000000000000000000000000000000000000000') return null
-
-      return {
-        requestId,
-        player: betData[0],
-        amount: betData[1],
-        token: betData[2],
-        chosenNumber: betData[3],
-        multiplier: betData[4],
-        settled: betData[5],
-        result: betData[6],
-        payout: betData[7],
-        win: betData[7] > 0n,
-        timestamp: 0, // Timestamp is hard to get from mapping, usually ignored or fetched from logs
-      }
-    } catch (e) {
-      console.error('Failed to get dice result', e)
-      return null
+    return {
+      requestId,
+      player: '0x' as Address,
+      amount: 0n,
+      token: ETH_ADDRESS,
+      chosenNumber: 0,
+      multiplier: 0,
+      settled: true,
+      result: Number(data[0]),
+      payout: data[1],
+      win: data[2],
+      timestamp: Date.now(),
     }
   }
 
   async getPokerResult(requestId: bigint): Promise<PokerBet | null> {
-    try {
-      const betData = await publicClient.readContract({
-        address: GAME_CORE_ADDRESS,
-        abi: ContractABI,
-        functionName: 'getFullPokerBet',
-        args: [requestId],
-      }) as any
-      
-      if (!betData) return null
+    const data = (await publicClient.readContract({
+      address: GAME_CORE_ADDRESS,
+      abi: GameCoreABI,
+      functionName: 'getPokerResult',
+      args: [requestId],
+    })) as [number, number, bigint, boolean]
 
-      // Handle object return from struct ABI
-      if (typeof betData === 'object' && !Array.isArray(betData)) {
-          const playerHandRank = betData.playerHandRank
-          const dealerHandRank = betData.dealerHandRank
-          const payout = betData.payout
-          
-          let result: 'win' | 'loss' | 'tie' = 'loss'
-          if (payout > betData.amount) result = 'win'
-          else if (payout === betData.amount && payout > 0n) result = 'tie'
-          else result = 'loss'
-
-          return {
-            requestId,
-            player: betData.player,
-            amount: betData.amount,
-            token: betData.token,
-            settled: betData.settled,
-            playerCards: [...betData.playerCards],
-            dealerCards: [...betData.dealerCards],
-            playerHandRank,
-            dealerHandRank,
-            payout,
-            result,
-            timestamp: 0,
-          }
-      }
-
-      // Fallback for array return
-      if (betData[0] === '0x0000000000000000000000000000000000000000') return null
-
-      const playerHandRank = betData[6]
-      const dealerHandRank = betData[7]
-      const payout = betData[8]
-      
-      let result: 'win' | 'loss' | 'tie' = 'loss'
-      if (payout > betData[1]) result = 'win' // Payout > Amount (approx check)
-      else if (payout === betData[1] && payout > 0n) result = 'tie'
-      else result = 'loss'
-
-      return {
-        requestId,
-        player: betData[0],
-        amount: betData[1],
-        token: betData[2],
-        settled: betData[3],
-        playerCards: [...betData[4]],
-        dealerCards: [...betData[5]],
-        playerHandRank,
-        dealerHandRank,
-        payout,
-        result,
-        timestamp: 0,
-      }
-    } catch (e) {
-      return null
+    return {
+      requestId,
+      player: '0x' as Address,
+      amount: 0n,
+      token: ETH_ADDRESS,
+      settled: true,
+      playerHandRank: Number(data[0]),
+      dealerHandRank: Number(data[1]),
+      payout: data[2],
+      result: data[3] ? 'win' : 'loss',
+      timestamp: Date.now(),
     }
   }
 
   async getDiceBetHistory(player: Address): Promise<DiceBet[]> {
-    // Reduce range to 1000 blocks to avoid RPC "exceeds limits" (1500) error
-    const currentBlock = await publicClient.getBlockNumber()
-    const fromBlock = currentBlock - 1000n > 0n ? currentBlock - 1000n : 0n
+    // 1. Get all DiceBetPlaced events for this player
+    const placedLogs = await publicClient.getContractEvents({
+      address: GAME_CORE_ADDRESS,
+      abi: GameCoreABI,
+      eventName: 'DiceBetPlaced',
+      args: { player },
+      fromBlock: 'earliest',
+    })
 
-    // Fetch logs to rebuild history
-    try {
-      const logs = await publicClient.getLogs({
-        address: GAME_CORE_ADDRESS,
-        event: parseAbiItem('event DiceBetPlaced(uint256 indexed requestId, address indexed player, uint256 amount, address token, uint8 chosenNumber, uint8 multiplier)'),
-        args: { player },
-        fromBlock: fromBlock,
+    // 2. Get all DiceBetSettled events
+    const settledLogs = await publicClient.getContractEvents({
+      address: GAME_CORE_ADDRESS,
+      abi: GameCoreABI,
+      eventName: 'DiceBetSettled',
+      fromBlock: 'earliest',
+    })
+
+    // 3. Build settled map
+    const settledMap = new Map<bigint, { result: number; payout: bigint; win: boolean }>()
+    for (const log of settledLogs) {
+      const args = log.args as { requestId: bigint; result: number; payout: bigint; win: boolean }
+      settledMap.set(args.requestId, {
+        result: Number(args.result),
+        payout: args.payout,
+        win: args.win,
       })
-
-      if (logs.length === 0) return []
-
-      // Batch fetch current status
-      const calls = logs.map(log => ({
-        address: GAME_CORE_ADDRESS,
-        abi: ContractABI,
-        functionName: 'diceBets',
-        args: [log.args.requestId!]
-      }))
-
-      const betDataResults = await publicClient.multicall({ contracts: calls })
-
-      const results = await Promise.all(logs.map(async (log, index) => {
-        const { requestId, amount, token, chosenNumber, multiplier } = log.args
-        const block = await publicClient.getBlock({ blockNumber: log.blockNumber })
-        const betData = betDataResults[index].result as [Address, bigint, Address, number, number, boolean, number, bigint]
-        
-        if (!betData) return null // Should not happen
-
-        return {
-          requestId: requestId!,
-          player: player,
-          amount: amount!,
-          token: token!,
-          chosenNumber: chosenNumber!,
-          multiplier: multiplier!,
-          settled: betData[5],
-          result: betData[6],
-          payout: betData[7],
-          win: betData[7] > 0n,
-          timestamp: Number(block.timestamp) * 1000
-        }
-      }))
-
-      return results.filter((b) => b !== null).sort((a, b) => b!.timestamp - a!.timestamp) as DiceBet[]
-    } catch (error) {
-      console.error('Failed to fetch dice bet history:', error)
-      return []
     }
+
+    // 4. Merge into DiceBet[]
+    return placedLogs
+      .map((log) => {
+        const args = log.args as {
+          requestId: bigint
+          player: Address
+          amount: bigint
+          token: Address
+          chosenNumber: number
+          multiplier: number
+        }
+        const settled = settledMap.get(args.requestId)
+        return {
+          requestId: args.requestId,
+          player: args.player,
+          amount: args.amount,
+          token: args.token,
+          chosenNumber: Number(args.chosenNumber),
+          multiplier: Number(args.multiplier),
+          settled: !!settled,
+          result: settled?.result,
+          payout: settled?.payout,
+          win: settled?.win,
+          timestamp: Date.now(), // Could be enriched via block.timestamp
+        }
+      })
+      .sort((a, b) => b.timestamp - a.timestamp)
   }
 
   async getPokerBetHistory(player: Address): Promise<PokerBet[]> {
-    try {
-      // Reduce range to 1000 blocks to avoid RPC "exceeds limits" (1500) error
-      const currentBlock = await publicClient.getBlockNumber()
-      const fromBlock = currentBlock - 1000n > 0n ? currentBlock - 1000n : 0n
+    // 1. Get all PokerBetPlaced events for this player
+    const placedLogs = await publicClient.getContractEvents({
+      address: GAME_CORE_ADDRESS,
+      abi: GameCoreABI,
+      eventName: 'PokerBetPlaced',
+      args: { player },
+      fromBlock: 'earliest',
+    })
 
-      const logs = await publicClient.getLogs({
-        address: GAME_CORE_ADDRESS,
-        event: parseAbiItem('event PokerBetPlaced(uint256 indexed requestId, address indexed player, uint256 amount, address token, uint8 handChoice)'),
-        args: { player },
-        fromBlock: fromBlock,
+    // 2. Get all PokerBetSettled events
+    const settledLogs = await publicClient.getContractEvents({
+      address: GAME_CORE_ADDRESS,
+      abi: GameCoreABI,
+      eventName: 'PokerBetSettled',
+      fromBlock: 'earliest',
+    })
+
+    // 3. Build settled map
+    const settledMap = new Map<
+      bigint,
+      { playerHand: number; dealerHand: number; payout: bigint; win: boolean }
+    >()
+    for (const log of settledLogs) {
+      const args = log.args as {
+        requestId: bigint
+        playerHand: number
+        dealerHand: number
+        payout: bigint
+        win: boolean
+      }
+      settledMap.set(args.requestId, {
+        playerHand: Number(args.playerHand),
+        dealerHand: Number(args.dealerHand),
+        payout: args.payout,
+        win: args.win,
       })
-
-      if (logs.length === 0) return []
-
-      const calls = logs.map(log => ({
-        address: GAME_CORE_ADDRESS,
-        abi: ContractABI,
-        functionName: 'getFullPokerBet',
-        args: [log.args.requestId!]
-      }))
-
-      const betDataResults = await publicClient.multicall({ contracts: calls })
-
-      const results = await Promise.all(logs.map(async (log, index) => {
-        const { requestId, amount, token } = log.args
-        const block = await publicClient.getBlock({ blockNumber: log.blockNumber })
-        // Note: When ABI uses struct, viem returns an object, not an array.
-        // We cast to 'any' here to handle both array (old behavior) and object (new behavior) cases safely.
-        const betData = betDataResults[index].result as any
-
-        if (!betData) return null
-
-        // Handle object return from struct ABI
-        if (typeof betData === 'object' && !Array.isArray(betData)) {
-            const playerHandRank = betData.playerHandRank
-            const dealerHandRank = betData.dealerHandRank
-            const payout = betData.payout
-            
-            let result: 'win' | 'loss' | 'tie' = 'loss'
-            if (payout > betData.amount) result = 'win'
-            else if (payout === betData.amount && payout > 0n) result = 'tie'
-            else result = 'loss'
-
-            return {
-              requestId: requestId!,
-              player: player,
-              amount: amount!,
-              token: token!,
-              settled: betData.settled,
-              playerCards: [...betData.playerCards],
-              dealerCards: [...betData.dealerCards],
-              playerHandRank,
-              dealerHandRank,
-              payout,
-              result,
-              timestamp: Number(block.timestamp) * 1000
-            }
-        }
-        
-        // Fallback for array return (if ABI changes back or different viem config)
-        const playerHandRank = betData[6]
-        const dealerHandRank = betData[7]
-        const payout = betData[8]
-        
-        let result: 'win' | 'loss' | 'tie' = 'loss'
-        if (payout > betData[1]) result = 'win'
-        else if (payout === betData[1] && payout > 0n) result = 'tie'
-        else result = 'loss'
-
-        return {
-          requestId: requestId!,
-          player: player,
-          amount: amount!,
-          token: token!,
-          settled: betData[3],
-          playerCards: [...betData[4]],
-          dealerCards: [...betData[5]],
-          playerHandRank,
-          dealerHandRank,
-          payout,
-          result,
-          timestamp: Number(block.timestamp) * 1000
-        }
-      }))
-
-      return results.filter((b) => b !== null).sort((a, b) => b!.timestamp - a!.timestamp) as PokerBet[]
-    } catch (error) {
-      console.error('Failed to fetch poker bet history:', error)
-      return []
     }
+
+    // 4. Merge into PokerBet[]
+    return placedLogs
+      .map((log) => {
+        const args = log.args as {
+          requestId: bigint
+          player: Address
+          amount: bigint
+          token: Address
+        }
+        const settled = settledMap.get(args.requestId)
+        let result: 'win' | 'loss' | 'tie' | undefined
+        if (settled) {
+          result = settled.win ? 'win' : 'loss'
+        }
+        return {
+          requestId: args.requestId,
+          player: args.player,
+          amount: args.amount,
+          token: args.token,
+          settled: !!settled,
+          playerHandRank: settled?.playerHand,
+          dealerHandRank: settled?.dealerHand,
+          payout: settled?.payout,
+          result,
+          timestamp: Date.now(),
+        }
+      })
+      .sort((a, b) => b.timestamp - a.timestamp)
   }
 
   async getAchievements(player: Address): Promise<Achievement[]> {
-    const earnedIds = await publicClient.readContract({
+    const earnedIds = (await publicClient.readContract({
       address: GAME_CORE_ADDRESS,
-      abi: ContractABI,
+      abi: GameCoreABI,
       functionName: 'getAchievements',
       args: [player],
-    }) as bigint[]
+    })) as bigint[]
 
-    const earnedSet = new Set(earnedIds.map(id => Number(id)))
+    const earnedSet = new Set(earnedIds.map((id) => Number(id)))
 
-    return mockAchievements.map(a => ({
+    return mockAchievements.map((a) => ({
       ...a,
       earned: earnedSet.has(a.id),
-      tokenId: earnedSet.has(a.id) ? BigInt(a.id) : undefined, // Simplification: tokenID = achievementID
+      tokenId: earnedSet.has(a.id) ? BigInt(a.id) : undefined,
     }))
   }
 
   async getReferrer(player: Address): Promise<Address | null> {
-    const data = await publicClient.readContract({
+    const data = (await publicClient.readContract({
       address: GAME_CORE_ADDRESS,
-      abi: ContractABI,
+      abi: GameCoreABI,
       functionName: 'getPlayerStats',
       args: [player],
-    }) as [bigint, bigint, bigint, Address]
-    
+    })) as [bigint, bigint, bigint, Address]
+
     const referrer = data[3]
-    return referrer === '0x0000000000000000000000000000000000000000' ? null : referrer
+    const zeroAddress = '0x0000000000000000000000000000000000000000'
+    return referrer === zeroAddress ? null : referrer
   }
 
-  async getAllReferralRewards(player: Address): Promise<Map<Address, bigint>> {
-    // Note: The contract doesn't have a helper to get ALL rewards.
-    // It has `referralRewards(referrer, token)`.
-    // We need to know which tokens are supported.
-    const tokens = await this.getSupportedTokens()
-    const rewards = new Map<Address, bigint>()
-    
-    await Promise.all(tokens.map(async (token) => {
-      const amount = await publicClient.readContract({
-        address: GAME_CORE_ADDRESS,
-        abi: ContractABI,
-        functionName: 'referralRewards',
-        args: [player, token],
-      }) as bigint
-      if (amount > 0n) rewards.set(token, amount)
-    }))
-    
-    return rewards
+  async getReferralRewards(_player: Address, _token: Address): Promise<bigint> {
+    // Not available in current ABI – will be computed from events later
+    return 0n
   }
 
-  // ============ Write Methods ============
+  async getAllReferralRewards(_player: Address): Promise<Map<Address, bigint>> {
+    // Not available in current ABI – will be computed from events later
+    return new Map()
+  }
+
+  // ======================== Write Methods ========================
 
   async betDice(
-    player: Address,
+    _player: Address,
     chosenNumber: number,
     multiplier: number,
     token: Address,
-    amount: bigint
+    amount: bigint,
   ): Promise<bigint> {
-    const wallet = await this.getWallet()
-    const isEth = token === '0x0000000000000000000000000000000000000000'
+    const walletClient = getWalletClient()
+    const [account] = await walletClient.getAddresses()
 
-    const hash = await wallet.writeContract({
+    const isETH = token === ETH_ADDRESS
+    const hash = await walletClient.writeContract({
       address: GAME_CORE_ADDRESS,
-      abi: ContractABI,
+      abi: GameCoreABI,
       functionName: 'betDice',
       args: [chosenNumber, multiplier, token, amount],
-      value: isEth ? amount : 0n,
-      account: player,
-      chain: null,
-      gas: 500000n
+      value: isETH ? amount : 0n,
+      account,
     })
 
-    // Wait for tx and extract requestId from event
     const receipt = await publicClient.waitForTransactionReceipt({ hash })
-    
-    for (const log of receipt.logs) {
-      if (log.address.toLowerCase() === GAME_CORE_ADDRESS.toLowerCase()) {
-        try {
-          const event = decodeEventLog({
-            abi: ContractABI,
-            data: log.data,
-            topics: log.topics, 
-          })
-          if ((event as any).eventName === 'DiceBetPlaced') {
-             // @ts-ignore
-            return event.args.requestId
-          }
-        } catch {}
-      }
-    }
-
-    throw new Error('Failed to retrieve request ID')
+    return this.parseRequestId(receipt.logs, 'DiceBetPlaced')
   }
 
-  async betPoker(player: Address, token: Address, amount: bigint): Promise<bigint> {
-    const wallet = await this.getWallet()
-    const isEth = token === '0x0000000000000000000000000000000000000000'
+  async betPoker(_player: Address, token: Address, amount: bigint): Promise<bigint> {
+    const walletClient = getWalletClient()
+    const [account] = await walletClient.getAddresses()
 
-    const hash = await wallet.writeContract({
+    const isETH = token === ETH_ADDRESS
+    const hash = await walletClient.writeContract({
       address: GAME_CORE_ADDRESS,
-      abi: ContractABI,
+      abi: GameCoreABI,
       functionName: 'betPoker',
-      args: [0, token, amount], // HandChoice is unused in current contract logic
-      value: isEth ? amount : 0n,
-      account: player,
-      chain: null,
-      gas: 500000n
+      args: [0, token, amount], // handChoice fixed at 0
+      value: isETH ? amount : 0n,
+      account,
     })
 
     const receipt = await publicClient.waitForTransactionReceipt({ hash })
-    
-    for (const log of receipt.logs) {
-      if (log.address.toLowerCase() === GAME_CORE_ADDRESS.toLowerCase()) {
-        try {
-          const event = decodeEventLog({
-            abi: ContractABI,
-            data: log.data,
-            topics: log.topics, 
-          })
-          if ((event as any).eventName === 'PokerBetPlaced') {
-            // @ts-ignore
-            return event.args.requestId
-          }
-        } catch {}
-      }
-    }
-    throw new Error('Failed to retrieve request ID')
+    return this.parseRequestId(receipt.logs, 'PokerBetPlaced')
   }
 
-  async setReferrer(player: Address, referrer: Address): Promise<void> {
-    const wallet = await this.getWallet()
-    const hash = await wallet.writeContract({
+  async setReferrer(_player: Address, referrer: Address): Promise<void> {
+    const walletClient = getWalletClient()
+    const [account] = await walletClient.getAddresses()
+
+    const hash = await walletClient.writeContract({
       address: GAME_CORE_ADDRESS,
-      abi: ContractABI,
+      abi: GameCoreABI,
       functionName: 'setReferrer',
       args: [referrer],
-      account: player,
-      chain: null,
+      account,
     })
+
     await publicClient.waitForTransactionReceipt({ hash })
   }
 
-  async claimReferralRewards(player: Address): Promise<void> {
-    const wallet = await this.getWallet()
-    const hash = await wallet.writeContract({
+  async claimReferralRewards(_player: Address): Promise<void> {
+    const walletClient = getWalletClient()
+    const [account] = await walletClient.getAddresses()
+
+    const hash = await walletClient.writeContract({
       address: GAME_CORE_ADDRESS,
-      abi: ContractABI,
+      abi: GameCoreABI,
       functionName: 'claimReferralRewards',
       args: [],
-      account: player,
-      chain: null,
+      account,
     })
+
     await publicClient.waitForTransactionReceipt({ hash })
+  }
+
+  async approveToken(_player: Address, token: Address, amount: bigint): Promise<void> {
+    if (token === ETH_ADDRESS) return
+
+    const walletClient = getWalletClient()
+    const [account] = await walletClient.getAddresses()
+
+    const hash = await walletClient.writeContract({
+      address: token, // ERC20 contract, NOT GameCore
+      abi: erc20Abi,
+      functionName: 'approve',
+      args: [GAME_CORE_ADDRESS, amount],
+      account,
+    })
+
+    await publicClient.waitForTransactionReceipt({ hash })
+  }
+
+  // ======================== Private Helpers ========================
+
+  private parseRequestId(
+    logs: { data: `0x${string}`; topics: [`0x${string}`, ...`0x${string}`[]] }[],
+    eventName: string,
+  ): bigint {
+    for (const log of logs) {
+      try {
+        const event = decodeEventLog({
+          abi: GameCoreABI,
+          data: log.data,
+          topics: log.topics,
+        })
+        if (event.eventName === eventName) {
+          return (event.args as { requestId: bigint }).requestId
+        }
+      } catch {
+        // Not the target event, skip
+      }
+    }
+    throw new Error(`${eventName} event not found in transaction`)
   }
 }
 
