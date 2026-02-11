@@ -8,9 +8,10 @@ export function formatAddress(address: string): string {
 export function formatEth(value: bigint): string {
   const formatted = viemFormatEther(value)
   const num = parseFloat(formatted)
+  const abs = Math.abs(num)
   if (num === 0) return '0'
-  if (num < 0.0001) return '< 0.0001'
-  return num.toFixed(4)
+  if (abs < 0.0001) return num < 0 ? '< -0.0001' : '< 0.0001'
+  return num < 0 ? `-${abs.toFixed(4)}` : abs.toFixed(4)
 }
 
 export function formatTimestamp(ts: number): string {
