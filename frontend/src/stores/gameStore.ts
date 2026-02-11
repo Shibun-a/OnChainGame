@@ -103,10 +103,27 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   updateDiceResult: async (requestId) => {
     try {
+      const currentState = get()
+      if (!currentState.pendingRequests.has(requestId) && !currentState.diceBets.has(requestId)) {
+        return
+      }
+
       const result = await contractClient.getDiceResult(requestId)
       if (result && result.settled) {
         const diceBets = new Map(get().diceBets)
-        diceBets.set(requestId, result)
+        const previous = diceBets.get(requestId)
+        if (previous) {
+          diceBets.set(requestId, {
+            ...previous,
+            settled: true,
+            result: result.result,
+            payout: result.payout,
+            win: result.win,
+          })
+        } else {
+          diceBets.set(requestId, result)
+        }
+
         const pendingRequests = new Set(get().pendingRequests)
         pendingRequests.delete(requestId)
         set({ diceBets, pendingRequests })
@@ -118,10 +135,28 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   updatePokerResult: async (requestId) => {
     try {
+      const currentState = get()
+      if (!currentState.pendingRequests.has(requestId) && !currentState.pokerBets.has(requestId)) {
+        return
+      }
+
       const result = await contractClient.getPokerResult(requestId)
       if (result && result.settled) {
         const pokerBets = new Map(get().pokerBets)
-        pokerBets.set(requestId, result)
+        const previous = pokerBets.get(requestId)
+        if (previous) {
+          pokerBets.set(requestId, {
+            ...previous,
+            settled: true,
+            playerHandRank: result.playerHandRank,
+            dealerHandRank: result.dealerHandRank,
+            payout: result.payout,
+            result: result.result,
+          })
+        } else {
+          pokerBets.set(requestId, result)
+        }
+
         const pendingRequests = new Set(get().pendingRequests)
         pendingRequests.delete(requestId)
         set({ pokerBets, pendingRequests })
