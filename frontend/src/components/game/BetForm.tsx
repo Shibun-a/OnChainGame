@@ -1,11 +1,13 @@
-import { useState, useMemo } from 'react'
-import { parseEther } from 'viem'
+import { useEffect, useMemo, useState } from 'react'
+import { parseUnits } from 'viem'
+import type { Address } from 'viem'
 import { useWallet } from '@/hooks/useWallet'
 import { useGameStore } from '@/stores/gameStore'
 import { Card } from '@/components/common/Card'
 import { Button } from '@/components/common/Button'
 import { BetSummary } from './BetSummary'
 import { toast } from '@/components/common/Toast'
+import { contractClient } from '@/contracts'
 import { formatEth, cn } from '@/utils/format'
 import { DICE_MULTIPLIERS, ETH_ADDRESS } from '@/contracts/types'
 
@@ -15,50 +17,112 @@ interface BetFormProps {
 }
 
 export function BetForm({ gameType, onBetPlaced }: BetFormProps) {
-  const { address, isConnected, ethBalance } = useWallet()
-  const { config, isPlacingBet, placeDiceBet, placePokerBet } = useGameStore()
+  const { address, isConnected, ethBalance, erc20Balances, updateBalances } = useWallet()
+  const { config, supportedTokens, tokenInfo, isPlacingBet, placeDiceBet, placePokerBet } = useGameStore()
   const [amount, setAmount] = useState('')
   const [multiplier, setMultiplier] = useState(2)
+  const [selectedToken, setSelectedToken] = useState<Address>(ETH_ADDRESS)
+  const [allowance, setAllowance] = useState(0n)
+  const [isApproving, setIsApproving] = useState(false)
+
+  useEffect(() => {
+    if (supportedTokens.length === 0) return
+    if (!supportedTokens.includes(selectedToken)) {
+      setSelectedToken(supportedTokens[0])
+    }
+  }, [supportedTokens, selectedToken])
+
+  const selectedTokenInfo = useMemo(() => {
+    return tokenInfo.get(selectedToken) ?? {
+      address: selectedToken,
+      symbol: selectedToken === ETH_ADDRESS ? 'ETH' : 'TOKEN',
+      decimals: 18,
+      isNative: selectedToken === ETH_ADDRESS,
+    }
+  }, [selectedToken, tokenInfo])
+
+  const isNativeToken = selectedToken === ETH_ADDRESS || selectedTokenInfo.isNative
+  const tokenSymbol = selectedTokenInfo.symbol
+  const tokenDecimals = selectedTokenInfo.decimals
+  const currentBalance = isNativeToken ? ethBalance : (erc20Balances.get(selectedToken) ?? 0n)
 
   const amountBigInt = useMemo(() => {
     try {
       if (!amount || parseFloat(amount) <= 0) return 0n
-      return parseEther(amount)
+      return parseUnits(amount, tokenDecimals)
     } catch {
       return 0n
     }
-  }, [amount])
+  }, [amount, tokenDecimals])
+
+  useEffect(() => {
+    if (!address || isNativeToken) {
+      setAllowance(0n)
+      return
+    }
+    contractClient.getTokenAllowance(address, selectedToken)
+      .then(setAllowance)
+      .catch(() => setAllowance(0n))
+  }, [address, isNativeToken, selectedToken])
+
+  const needsApproval = !isNativeToken && amountBigInt > 0n && allowance < amountBigInt
 
   const validation = useMemo(() => {
     if (!config) return { valid: false, error: 'Loading...' }
     if (!amount || amountBigInt === 0n) return { valid: false, error: '' }
-    if (amountBigInt < config.minBet) return { valid: false, error: `Min bet: ${formatEth(config.minBet)} ETH` }
-    if (amountBigInt > config.maxBet) return { valid: false, error: `Max bet: ${formatEth(config.maxBet)} ETH` }
-    if (amountBigInt > ethBalance) return { valid: false, error: 'Insufficient balance' }
+    if (amountBigInt < config.minBet) return { valid: false, error: `Min bet: ${formatEth(config.minBet)} ${tokenSymbol}` }
+    if (amountBigInt > config.maxBet) return { valid: false, error: `Max bet: ${formatEth(config.maxBet)} ${tokenSymbol}` }
+    if (amountBigInt > currentBalance) return { valid: false, error: `Insufficient ${tokenSymbol} balance` }
 
     const mult = gameType === 'dice' ? multiplier : 2
     const maxPayout = (amountBigInt * BigInt(mult) * BigInt(10000 - config.houseEdgeBps)) / 10000n
     if (maxPayout > config.rewardPool) return { valid: false, error: 'Reward pool insufficient' }
 
     return { valid: true, error: '' }
-  }, [config, amount, amountBigInt, ethBalance, multiplier, gameType])
+  }, [config, amount, amountBigInt, currentBalance, multiplier, gameType, tokenSymbol])
+
+  const refreshAllowance = async () => {
+    if (!address || isNativeToken) return
+    try {
+      const next = await contractClient.getTokenAllowance(address, selectedToken)
+      setAllowance(next)
+    } catch {
+      setAllowance(0n)
+    }
+  }
+
+  const handleApprove = async () => {
+    if (!address || isNativeToken || amountBigInt === 0n) return
+    setIsApproving(true)
+    try {
+      await contractClient.approveToken(address, selectedToken, amountBigInt)
+      await refreshAllowance()
+      toast(`${tokenSymbol} approved`, 'success')
+    } catch (error) {
+      toast((error as Error).message, 'error')
+    } finally {
+      setIsApproving(false)
+    }
+  }
 
   const handleSubmit = async () => {
-    if (!address || !validation.valid) return
+    if (!address || !validation.valid || needsApproval) return
 
     try {
       const chosenNumber = Math.floor(Math.random() * 100) + 1
       let requestId: bigint
 
       if (gameType === 'dice') {
-        requestId = await placeDiceBet(address, chosenNumber, multiplier, ETH_ADDRESS, amountBigInt)
+        requestId = await placeDiceBet(address, chosenNumber, multiplier, selectedToken, amountBigInt)
       } else {
-        requestId = await placePokerBet(address, ETH_ADDRESS, amountBigInt)
+        requestId = await placePokerBet(address, selectedToken, amountBigInt)
       }
 
       toast('Bet placed! Waiting for result...', 'info')
       onBetPlaced(requestId)
       setAmount('')
+      await updateBalances()
+      await refreshAllowance()
     } catch (error) {
       toast((error as Error).message, 'error')
     }
@@ -79,12 +143,25 @@ export function BetForm({ gameType, onBetPlaced }: BetFormProps) {
           {gameType === 'dice' ? 'Place Dice Bet' : 'Place Poker Bet'}
         </h3>
 
-        {/* Token display (ETH only for now) */}
+        {/* Token selector */}
         <div className="mb-4">
           <label className="text-sm text-gray-400 mb-1 block">Token</label>
-          <div className="bg-gray-700 rounded-lg px-4 py-2.5 flex items-center justify-between">
-            <span className="font-medium">ETH</span>
-            <span className="text-sm text-gray-400">Balance: {formatEth(ethBalance)}</span>
+          <div className="bg-gray-700 rounded-lg px-4 py-2.5 flex items-center justify-between gap-3">
+            <select
+              value={selectedToken}
+              onChange={(e) => setSelectedToken(e.target.value as Address)}
+              className="bg-gray-700 text-white text-sm outline-none"
+            >
+              {supportedTokens.map(token => {
+                const info = tokenInfo.get(token)
+                return (
+                  <option key={token} value={token}>
+                    {info?.symbol ?? (token === ETH_ADDRESS ? 'ETH' : 'TOKEN')}
+                  </option>
+                )
+              })}
+            </select>
+            <span className="text-sm text-gray-400">Balance: {formatEth(currentBalance)} {tokenSymbol}</span>
           </div>
         </div>
 
@@ -103,8 +180,8 @@ export function BetForm({ gameType, onBetPlaced }: BetFormProps) {
             />
             <button
               onClick={() => {
-                if (config && ethBalance > 0n) {
-                  const max = ethBalance < config.maxBet ? ethBalance : config.maxBet
+                if (config && currentBalance > 0n) {
+                  const max = currentBalance < config.maxBet ? currentBalance : config.maxBet
                   setAmount(formatEth(max))
                 }
               }}
@@ -152,15 +229,27 @@ export function BetForm({ gameType, onBetPlaced }: BetFormProps) {
         )}
 
         {/* Submit */}
-        <Button
-          className="w-full"
-          size="lg"
-          onClick={handleSubmit}
-          disabled={!validation.valid || isPlacingBet}
-          loading={isPlacingBet}
-        >
-          {isPlacingBet ? 'Placing Bet...' : gameType === 'dice' ? 'Roll Dice' : 'Deal Cards'}
-        </Button>
+        {needsApproval ? (
+          <Button
+            className="w-full"
+            size="lg"
+            onClick={handleApprove}
+            disabled={amountBigInt === 0n || isApproving || isPlacingBet || !address}
+            loading={isApproving}
+          >
+            {isApproving ? `Approving ${tokenSymbol}...` : `Approve ${tokenSymbol}`}
+          </Button>
+        ) : (
+          <Button
+            className="w-full"
+            size="lg"
+            onClick={handleSubmit}
+            disabled={!validation.valid || isPlacingBet}
+            loading={isPlacingBet}
+          >
+            {isPlacingBet ? 'Placing Bet...' : gameType === 'dice' ? 'Roll Dice' : 'Deal Cards'}
+          </Button>
+        )}
       </Card>
 
       {/* Summary */}
@@ -170,6 +259,7 @@ export function BetForm({ gameType, onBetPlaced }: BetFormProps) {
           multiplier={multiplier}
           gameType={gameType}
           config={config}
+          tokenSymbol={tokenSymbol}
         />
       )}
     </div>

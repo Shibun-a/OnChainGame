@@ -7,9 +7,10 @@ interface BetSummaryProps {
   multiplier: number
   gameType: 'dice' | 'poker'
   config: GameConfig
+  tokenSymbol: string
 }
 
-export function BetSummary({ amount, multiplier, gameType, config }: BetSummaryProps) {
+export function BetSummary({ amount, multiplier, gameType, config, tokenSymbol }: BetSummaryProps) {
   if (amount === 0n) return null
 
   const effectiveMultiplier = gameType === 'dice' ? multiplier : 2
@@ -25,7 +26,7 @@ export function BetSummary({ amount, multiplier, gameType, config }: BetSummaryP
       <div className="space-y-2 text-sm">
         <div className="flex justify-between">
           <span className="text-gray-400">Bet Amount</span>
-          <span>{formatEth(amount)} ETH</span>
+          <span>{formatEth(amount)} {tokenSymbol}</span>
         </div>
         {gameType === 'dice' && (
           <div className="flex justify-between">
@@ -43,7 +44,7 @@ export function BetSummary({ amount, multiplier, gameType, config }: BetSummaryP
         </div>
         <div className="border-t border-gray-700 pt-2 flex justify-between">
           <span className="text-gray-300 font-semibold">Potential Payout</span>
-          <span className="text-green-400 font-bold">{formatEth(potentialPayout)} ETH</span>
+          <span className="text-green-400 font-bold">{formatEth(potentialPayout)} {tokenSymbol}</span>
         </div>
       </div>
     </Card>

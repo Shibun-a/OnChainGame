@@ -8,6 +8,7 @@ import GameCoreABI from '@/contracts/abi/GameCore.json'
 export function useContractEvents() {
   const { pendingRequests, updateDiceResult, updatePokerResult } = useGameStore()
   const { markEarned } = useAchievementStore()
+  const address = useWalletStore(state => state.address)
 
   // 1. Setup Event Listeners (WebSockets / Polling Logs)
   useEffect(() => {

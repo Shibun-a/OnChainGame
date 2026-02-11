@@ -137,9 +137,9 @@ export const useGameStore = create<GameState>((set, get) => ({
         contractClient.getDiceBetHistory(player),
         contractClient.getPokerBetHistory(player),
       ])
-      const diceBets = new Map(get().diceBets)
+      const diceBets = new Map<bigint, DiceBet>()
       diceHistory.forEach(b => diceBets.set(b.requestId, b))
-      const pokerBets = new Map(get().pokerBets)
+      const pokerBets = new Map<bigint, PokerBet>()
       pokerHistory.forEach(b => pokerBets.set(b.requestId, b))
       set({ diceBets, pokerBets })
     } catch (error) {

@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@chainlink/contracts/src/v0.8/vrf/dev/VRFConsumerBaseV2Plus.sol";
-import "@chainlink/contracts/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
-import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {VRFConsumerBaseV2} from "@chainlink/contracts/src/v0.8/vrf/VRFConsumerBaseV2.sol";
+import {VRFCoordinatorV2Interface} from "@chainlink/contracts/src/v0.8/vrf/interfaces/VRFCoordinatorV2Interface.sol";
+
+import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 contract GameCore is VRFConsumerBaseV2Plus, ERC721, ReentrancyGuard {
 
@@ -84,7 +86,12 @@ contract GameCore is VRFConsumerBaseV2Plus, ERC721, ReentrancyGuard {
         address _vrfCoordinator,
         uint256 _subscriptionId,
         bytes32 _keyHash
-    ) VRFConsumerBaseV2Plus(_vrfCoordinator) ERC721("GameAchievements", "GACH") {
+    ) 
+        VRFConsumerBaseV2(_vrfCoordinator) 
+        ERC721("GameAchievements", "GACH") 
+        Ownable(msg.sender) 
+    {
+        vrfCoordinator = VRFCoordinatorV2Interface(_vrfCoordinator);
         subscriptionId = _subscriptionId;
         keyHash = _keyHash;
 
