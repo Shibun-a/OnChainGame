@@ -1,10 +1,12 @@
 import { useEffect } from 'react'
 import { useGameStore } from '@/stores/gameStore'
 import { useAchievementStore } from '@/stores/achievementStore'
+import { useWalletStore } from '@/stores/walletStore'
 
 export function useContractEvents() {
   const { updateDiceResult, updatePokerResult } = useGameStore()
   const { markEarned } = useAchievementStore()
+  const address = useWalletStore(state => state.address)
 
   useEffect(() => {
     const handleDiceSettled = (e: Event) => {
@@ -18,7 +20,8 @@ export function useContractEvents() {
     }
 
     const handleAchievement = (e: Event) => {
-      const { achievementId, tokenId } = (e as CustomEvent).detail
+      const { player, achievementId, tokenId } = (e as CustomEvent).detail
+      if (!address || !player || player.toLowerCase() !== address.toLowerCase()) return
       markEarned(achievementId, BigInt(tokenId))
     }
 
@@ -31,5 +34,5 @@ export function useContractEvents() {
       window.removeEventListener('mock:PokerBetSettled', handlePokerSettled)
       window.removeEventListener('mock:AchievementMinted', handleAchievement)
     }
-  }, [updateDiceResult, updatePokerResult, markEarned])
+  }, [address, updateDiceResult, updatePokerResult, markEarned])
 }
