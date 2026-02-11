@@ -50,7 +50,7 @@ export function useContractEvents() {
       eventName: 'DiceBetSettled',
       onLogs: (logs) => {
         for (const log of logs) {
-          updateDiceResult((log.args as { requestId: bigint }).requestId)
+          updateDiceResult(((log as unknown as { args: { requestId: bigint } }).args).requestId)
         }
       },
     })
@@ -61,7 +61,7 @@ export function useContractEvents() {
       eventName: 'PokerBetSettled',
       onLogs: (logs) => {
         for (const log of logs) {
-          updatePokerResult((log.args as { requestId: bigint }).requestId)
+          updatePokerResult(((log as unknown as { args: { requestId: bigint } }).args).requestId)
         }
       },
     })
@@ -72,11 +72,11 @@ export function useContractEvents() {
       eventName: 'AchievementMinted',
       onLogs: (logs) => {
         for (const log of logs) {
-          const { player, achievementId, tokenId } = log.args as {
+          const { player, achievementId, tokenId } = (log as unknown as { args: {
             player: Address
             achievementId: bigint
             tokenId: bigint
-          }
+          } }).args
           if (address && player.toLowerCase() === address.toLowerCase()) {
             markEarned(Number(achievementId), tokenId)
           }

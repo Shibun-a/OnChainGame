@@ -171,7 +171,7 @@ class RealContractClient {
     // 3. Build settled map
     const settledMap = new Map<bigint, { result: number; payout: bigint; win: boolean }>()
     for (const log of settledLogs) {
-      const args = log.args as { requestId: bigint; result: number; payout: bigint; win: boolean }
+      const args = (log as unknown as { args: { requestId: bigint; result: number; payout: bigint; win: boolean } }).args
       settledMap.set(args.requestId, {
         result: Number(args.result),
         payout: args.payout,
@@ -182,14 +182,14 @@ class RealContractClient {
     // 4. Merge into DiceBet[]
     return placedLogs
       .map((log) => {
-        const args = log.args as {
+        const args = (log as unknown as { args: {
           requestId: bigint
           player: Address
           amount: bigint
           token: Address
           chosenNumber: number
           multiplier: number
-        }
+        } }).args
         const settled = settledMap.get(args.requestId)
         return {
           requestId: args.requestId,
@@ -232,13 +232,13 @@ class RealContractClient {
       { playerHand: number; dealerHand: number; payout: bigint; win: boolean }
     >()
     for (const log of settledLogs) {
-      const args = log.args as {
+      const args = (log as unknown as { args: {
         requestId: bigint
         playerHand: number
         dealerHand: number
         payout: bigint
         win: boolean
-      }
+      } }).args
       settledMap.set(args.requestId, {
         playerHand: Number(args.playerHand),
         dealerHand: Number(args.dealerHand),
@@ -250,12 +250,12 @@ class RealContractClient {
     // 4. Merge into PokerBet[]
     return placedLogs
       .map((log) => {
-        const args = log.args as {
+        const args = (log as unknown as { args: {
           requestId: bigint
           player: Address
           amount: bigint
           token: Address
-        }
+        } }).args
         const settled = settledMap.get(args.requestId)
         let result: 'win' | 'loss' | 'tie' | undefined
         if (settled) {
@@ -411,7 +411,7 @@ class RealContractClient {
   // ======================== Private Helpers ========================
 
   private parseRequestId(
-    logs: { data: `0x${string}`; topics: [`0x${string}`, ...`0x${string}`[]] }[],
+    logs: readonly { data: `0x${string}`; topics: readonly `0x${string}`[] }[],
     eventName: string,
   ): bigint {
     for (const log of logs) {
@@ -419,10 +419,10 @@ class RealContractClient {
         const event = decodeEventLog({
           abi: GameCoreABI,
           data: log.data,
-          topics: log.topics,
+          topics: log.topics as [`0x${string}`, ...`0x${string}`[]],
         })
         if (event.eventName === eventName) {
-          return (event.args as { requestId: bigint }).requestId
+          return (event.args as unknown as { requestId: bigint }).requestId
         }
       } catch {
         // Not the target event, skip
