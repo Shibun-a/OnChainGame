@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { useEffect } from 'react'
 import { useWallet } from '@/hooks/useWallet'
+import { useEnsName } from '@/hooks/useEnsName'
 import { useGameStore } from '@/stores/gameStore'
 import { Card } from '@/components/common/Card'
 import { ConnectButton } from '@/components/wallet/ConnectButton'
@@ -8,7 +9,8 @@ import { BetHistory } from '@/components/game/BetHistory'
 import { formatEth } from '@/utils/format'
 
 export default function HomePage() {
-  const { isConnected } = useWallet()
+  const { address, isConnected } = useWallet()
+  const { displayName } = useEnsName(address)
   const { config, diceBets, pokerBets, loadConfig } = useGameStore()
 
   useEffect(() => {
@@ -29,6 +31,11 @@ export default function HomePage() {
           <div className="flex justify-center">
             <ConnectButton />
           </div>
+        )}
+        {isConnected && (
+          <p className="text-sm md:text-base text-gray-300">
+            Connected as <span className="font-semibold text-blue-300">{displayName}</span>
+          </p>
         )}
       </section>
 
