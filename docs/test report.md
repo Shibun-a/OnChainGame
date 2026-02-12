@@ -67,11 +67,11 @@ invariant_noSelfReferral	referrers[player] ≠ player for all players
 invariant_tokenWhitelistSync	supportedTokens[] and isTokenSupported mapping always in sync
 
 6.Test Results
-![test result1](./images/result1.png)
+![testresult1](./images/testresult1.png)
+![testresult2](./images/testresult1.png)
  
-
 7.Test Coverage
- [Screenshot 2] — forge coverage 覆盖率报告终端输出
+![coverage](./images/coverage.png)
 
 File	Lines	Statements	Branches	Functions
 GameCore.sol	—	—	—	—
